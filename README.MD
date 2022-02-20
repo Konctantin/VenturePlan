@@ -1,4 +1,6 @@
-Venture Plan improves the Command Table interface for covenant adventures.
+### Venture Plan improves the Command Table interface for covenant adventures.
+
+Unofficaial source https://www.townlong-yak.com/addons/venture-plan
 
 The Available Adventures list provides more detail about more adventures than the default UI, requiring less scrolling.
 You can quickly receive rewards from completed adventures, and set up tentative parties for multiple adventures before committing your companions.
