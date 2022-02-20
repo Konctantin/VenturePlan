@@ -2,6 +2,7 @@ local _, T = ...
 local SpellInfo = T.KnownSpells
 
 local band, bor, floor = bit.band, bit.bor, math.floor
+
 local f32_ne, f32_perc, f32_pim, f32_fpim do
 	local frexp, lt = math.frexp, {
 		[-80]=-0xcccccd*2^-24,
@@ -31,9 +32,11 @@ local f32_ne, f32_perc, f32_pim, f32_fpim do
 		[4520]=0xb4cccd*2^-18,
 		[9040]=0xb4cccd*2^-17,
 	}
+
 	function f32_perc(p)
 		return lt[p] or f32_ne(p/100)
 	end
+
 	function f32_ne(f)
 		local neg, s, e = f < 0, frexp(f)
 		s = neg and -s or s
@@ -42,17 +45,21 @@ local f32_ne, f32_perc, f32_pim, f32_fpim do
 		local rv = (s - lo + a) * 2^e
 		return neg and -rv or rv
 	end
+
 	function f32_pim(p, i)
 		i = f32_ne(i * (lt[p] or f32_ne(p/100)))
 		return i - i%1
 	end
+
 	function f32_fpim(p, i)
 		return f32_ne(i * (lt[p] or f32_ne(p/100)))
 	end
 end
+
 local f32_sr do
 	local ah, al = {}, {}
 	local ev, minv, maxv = {}, {}, {}
+	
 	function f32_sr(s)
 		local c, mc = s.c, #s
 		if mc == 1 then
@@ -110,6 +117,7 @@ local f32_sr do
 		return vl, vh
 	end
 end
+
 local function icast(f)
 	local m = f % 1
 	return f - m + (m > f and m > 0 and 1 or 0)
@@ -124,42 +132,72 @@ for i=0,15 do
 end
 
 local forkTargets = {["random-enemy"]="all-enemies", ["random-ally"]="all-allies", ["random-all"]="all"}
+
 local forkTargetBits= {["all-enemies"]=1, ["all-allies"]=2, ["all"]=4}
+
 do -- targets
-	local overrideAA = {[57]=0, [181]=0, [209]=0, [341]=0, [409]=1, [777]=0, [1213]=0, [69424]=0, [69426]=0, [69432]=0, [69434]=0, [69518]=0, [69522]=0, [69524]=0, [69530]=0, [69646]=0, [69648]=0, [69650]=0, [69652]=0, [70286]=0, [70288]=0, [70290]=0, [70292]=0, [70456]=0, [70478]=0, [70550]=0, [70556]=0, [70584]=0, [70586]=0, [70638]=0, [70640]=0, [70642]=0, [70644]=0, [70678]=0, [70682]=0, [70684]=0, [70702]=0, [70704]=0, [70706]=0, [70708]=0, [70714]=0, [70806]=0, [70808]=0, [70812]=0, [70832]=0, [70862]=0, [70868]=0, [70874]=0, [70908]=0, [71194]=0, [71606]=0, [71612]=0, [71640]=0, [71670]=0, [71672]=0, [71674]=0, [71676]=0, [71736]=0, [71800]=0, [71802]=0, [72086]=0, [72088]=0, [72090]=0, [72092]=0, [72310]=0, [72314]=0, [72336]=0, [72338]=0, [72942]=0, [72944]=0, [72946]=0, [72948]=0, [72954]=0, [73210]=0, [73398]=0, [73404]=0, [73558]=0, [73560]=0, [73564]=0}
-	local targetLists do
-		targetLists = {
+	local targetLists = {
 		[0]={
-			[0]="56a79b8c", "67b8ac59", "569a7b8c", "675a9b8c", "786bac59",
-			"20314", "23014", "34201", "43120",
-			"23014", "23401", "23401", "34201"
+			[00] = { 5, 6, 10, 7, 9, 11, 8, 12, },
+			[01] = { 6, 7, 11, 8, 10, 12, 5, 9, },
+			[02] = { 5, 6, 9, 10, 7, 11, 8, 12, },
+			[03] = { 6, 7, 5, 10, 9, 11, 8, 12, },
+			[04] = { 7, 8, 6, 11, 10, 12, 5, 9, },
+			[05] = { 2, 0, 3, 1, 4, },
+			[06] = { 2, 3, 0, 1, 4, },
+			[07] = { 3, 4, 2, 0, 1, },
+			[08] = { 4, 3, 1, 2, 0, },
+			[09] = { 2, 3, 0, 1, 4, },
+			[10] = { 2, 3, 4, 0, 1, },
+			[11] = { 2, 3, 4, 0, 1, },
+			[12] = { 3, 4, 2, 0, 1, },
 		},
 		[1]={
-			[0]="c89ba576", "95acb687", "c8b79a56", "9c58ab67", "95a6bc78",
-			"41302", "41023", "20134", "20314",
-			"41032", "10423", "01234", "20134"
+			[00] = { 12, 8, 9, 11, 10, 5, 7, 6, },
+			[01] = { 9, 5, 10, 12, 11, 6, 8, 7, },
+			[02] = { 12, 8, 11, 7, 9, 10, 5, 6, },
+			[03] = { 9, 12, 5, 8, 10, 11, 6, 7, },
+			[04] = { 9, 5, 10, 6, 11, 12, 7, 8, },
+			[05] = { 4, 1, 3, 0, 2, },
+			[06] = { 4, 1, 0, 2, 3, },
+			[07] = { 2, 0, 1, 3, 4, },
+			[08] = { 2, 0, 3, 1, 4, },
+			[09] = { 4, 1, 0, 3, 2, },
+			[10] = { 1, 0, 4, 2, 3, },
+			[11] = { 0, 1, 2, 3, 4, },
+			[12] = { 2, 0, 1, 3, 4, },
 		},
 		[3]={
-			[0]="23104", "03421", "03214", "20143", "31204",
-			"56a79b8c", "5a7b69c8", "6bac8759", "768bc95a",
-			"5a6978bc", "96b57a8c", "a78c69b5", "56a79b8c"
+			[00] = { 2, 3, 1, 0, 4, },
+			[01] = { 0, 3, 4, 2, 1, },
+			[02] = { 0, 3, 2, 1, 4, },
+			[03] = { 2, 0, 1, 4, 3, },
+			[04] = { 3, 1, 2, 0, 4, },
+			[05] = { 5, 6, 10, 7, 9, 11, 8, 12, },
+			[06] = { 5, 10, 7, 11, 6, 9, 12, 8, },
+			[07] = { 6, 11, 10, 12, 8, 7, 5, 9, },
+			[08] = { 7, 6, 8, 11, 12, 9, 5, 10, },
+			[09] = { 5, 10, 6, 9, 7, 8, 11, 12, },
+			[10] = { 9, 6, 11, 5, 7, 10, 8, 12, },
+			[11] = { 10, 7, 8, 12, 6, 9, 11, 5, },
+			[12] = { 5, 6, 10, 7, 9, 11, 8, 12, },
 		},
-		[4]={
-			[0]="0", "1", "2", "3", "4",
-			"5","6","7","8",
-			"9","a","b","c",
+		[4] = {
+			[0]  = { 0 },
+			[1]  = { 1 },
+			[2]  = { 2 },
+			[3]  = { 3 },
+			[4]  = { 4 },
+			[5]  = { 5 },
+			[6]  = { 6 },
+			[7]  = { 7 },
+			[8]  = { 8 },
+			[9]  = { 9 },
+			[10] = { 10 },
+			[11] = { 11 },
+			[12] = { 12 },
 		},
-		}
-		for _, m in pairs(targetLists) do
-			for o, t in pairs(m) do
-				local r = {}
-				for i=1,#t do
-					r[i] = tonumber(t:sub(i,i), 16)
-				end
-				m[o] = r
-			end
-		end
-	end
+	}
 	local adjCleave = {
 		[0x50]=3, [0x83]=1,
 		[0x62]=3, [0x63]=2, [0xa2]=3, [0xa3]=2,
@@ -192,6 +230,7 @@ do -- targets
 		[0x41]=1, [0x43]=1,
 	}
 	local stt = {}
+
 	local function GetTargets(source, tt, board)
 		local ni, su, tl, lo, taunt = 1, board[source], targetLists[tt], source < 5 and source >= 0
 		taunt, tl = su and su.taunt, tl and tl[source]
@@ -409,11 +448,33 @@ do -- targets
 		end
 		return stt
 	end
-	function VS:GetAutoAttack(role, slot, mid, firstSpell)
-		local a1 = slot and mid and overrideAA[4+2*slot+32*mid]
-		local a2 = (slot or 0) < 5 and firstSpell and overrideAA[1+4*firstSpell]
-		return (a1 or a2 or (role == 1 or role == 5) and 0 or 1) == 0 and 11 or 15
+
+    local M, R = 11, 15;
+    local enemies = {
+        -- [boardIndex] = {[missionId]=R (range spell id)}
+        [05] = { [2172]=M,[2176]=M,[2196]=M,[2207]=M,[2209]=M,[2202]=M,[2214]=M,[2312]=M,[2304]=M },
+        [06] = { [2304]=M,[2305]=M,[2311]=M,[2314]=M,[2315]=M,[2316]=M,[2317]=M,[2260]=M,[2209]=M,[2213]=M,[2176]=M,[2196]=M,[2207]=M,[2169]=M },
+        [07] = { [2169]=M,[2172]=M,[2176]=M,[2196]=M,[2209]=M,[2207]=M,[2260]=M,[2305]=M,[2304]=M },
+        [08] = { [2305]=M,[2304]=M,[2214]=M,[2207]=M,[2209]=M,[2196]=M,[2176]=M,[2172]=M },
+        [09] = { [2204]=M,[2208]=M,[2239]=M,[2212]=M,[2252]=M,[2293]=M,[2298]=M,[2313]=M,[2259]=M,[2301]=M,[2307]=M,[2304]=M,[2303]=M },
+        [10] = { [2304]=M,[2307]=M,[2303]=M,[2298]=M,[2252]=M,[2239]=M,[2243]=M,[2212]=M,[2201]=M,[2238]=M,[2241]=M,[2205]=M,[2169]=M },
+        [11] = { [2169]=M,[2172]=M,[2209]=M,[2208]=M,[2205]=M,[2214]=M,[2224]=M,[2239]=M,[2259]=M,[2303]=M,[2287]=M,[2279]=M,[2252]=M,[2307]=M,[2304]=M },
+        [12] = { [2304]=M,[2307]=M,[2298]=M,[2293]=M,[2303]=M,[2313]=M,[2252]=M,[2212]=M,[2239]=M,[2215]=M,[2204]=M,[2208]=M },
+    };
+
+    -- [FirstSpellID] = R (range spell id)
+    local followers = { [14]=M, [45]=M, [85]=M, [194]=M, [303]=M, [306]=M, [309]=M, [314]=M, [325]=M };
+
+	function VS:GetAutoAttack(role, boardIndex, missionId, firstSpell)
+        local attackSpellId = (role == 1 or role == 5) and M or R;
+        if (boardIndex or 0) > 4 and missionId then
+            attackSpellId = enemies[boardIndex] and enemies[boardIndex][missionId] or attackSpellId;
+        elseif firstSpell then
+            attackSpellId = followers[firstSpell] or attackSpellId;
+		end
+        return attackSpellId;
 	end
+
 	VS.GetTargets = GetTargets
 	VS.targetLists = targetLists
 	VS.forkTargetMap = forkTargets
@@ -427,6 +488,7 @@ local function enq(qs, k, e)
 	end
 	q[#q+1] = e
 end
+
 local function enqc(q, k, e)
 	e[5] = e
 	return enq(q, k, e)
@@ -447,8 +509,9 @@ function mu:stackf32(_sourceIndex, targetIndex, stackName, magh, _sid)
 			s[#s+1], c[magh] = magh, 1
 		end
 	end
-	b[stackName], b[stackName .. "H"] = nil
+	b[stackName], b[stackName .. "H"] = nil, nil
 end
+
 function mu:unstackf32(_sourceIndex, targetIndex, stackName, magh)
 	local b = self.board[targetIndex]
 	local s = b.stacks[stackName]
@@ -471,12 +534,15 @@ function mu:unstackf32(_sourceIndex, targetIndex, stackName, magh)
 	end
 	b[stackName], b[stackName .. "H"] = nil
 end
+
 function mu:modDamageDealt(sourceIndex, targetIndex, mod, sid)
 	mu.stackf32(self, sourceIndex, targetIndex, "modDamageDealt", mod, sid)
 end
+
 function mu:modDamageTaken(sourceIndex, targetIndex, mod, sid)
 	mu.stackf32(self, sourceIndex, targetIndex, "modDamageTaken", mod, sid)
 end
+
 function mu:damage(sourceIndex, targetIndex, baseDamage, causeTag, causeSID, eDNE)
 	local board = self.board
 	local tu, su = board[targetIndex], board[sourceIndex]
@@ -573,6 +639,7 @@ function mu:damage(sourceIndex, targetIndex, baseDamage, causeTag, causeSID, eDN
 		mu.damage(self, targetIndex, sourceIndex, thorns, "Thorn", tu.thornsSID)
 	end
 end
+
 function mu:dtick(sourceIndex, targetIndex, esid, eeid, causeTag, causeSID)
 	local board = self.board
 	local tu, su = board[targetIndex], board[sourceIndex]
@@ -590,6 +657,7 @@ function mu:dtick(sourceIndex, targetIndex, esid, eeid, causeTag, causeSID)
 		end
 	end
 end
+
 function mu:mend(sourceIndex, targetIndex, halfPoints, causeTag, causeSID)
 	local board = self.board
 	local tu = board[targetIndex]
@@ -611,6 +679,7 @@ function mu:mend(sourceIndex, targetIndex, halfPoints, causeTag, causeSID)
 		end
 	end
 end
+
 function mu:unshroud(_sourceIndex, targetIndex)
 	local tu = self.board[targetIndex]
 	if tu then
@@ -618,12 +687,14 @@ function mu:unshroud(_sourceIndex, targetIndex)
 		tu.shroud, self.ftc = ns > 0 and ns or nil, nil
 	end
 end
+
 function mu:untaunt(source, target, _sid)
 	local tu = self.board[target]
 	if tu and tu.taunt == source then
 		tu.taunt = nil
 	end
 end
+
 function mu:statDelta(_sourceIndex, targetIndex, statName, delta)
 	local tu = self.board[targetIndex]
 	if tu then
@@ -634,6 +705,7 @@ function mu:statDelta(_sourceIndex, targetIndex, statName, delta)
 		end
 	end
 end
+
 function mu:die(sourceIndex, deadIndex, causeTag, eDNE)
 	local k, board, wasOver = deadIndex < 5 and "liveFriends" or "liveEnemies", self.board, self.over
 	self[k], self.ftc = self[k] - 1, nil
@@ -669,6 +741,7 @@ function mu:die(sourceIndex, deadIndex, causeTag, eDNE)
 		end
 	end
 end
+
 function mu:passive(source, sid)
 	local board = self.board
 	local si, su = SpellInfo[sid], board[source]
@@ -695,6 +768,7 @@ function mu:passive(source, sid)
 	end
 	su.deathUnwind = onDeath
 end
+
 function mu:aura0(sourceIndex, targetIndex, _targetSeq, _ord, si, sid, _eid)
 	local board = self.board
 	local su = board[sourceIndex]
@@ -724,6 +798,7 @@ function mu:aura0(sourceIndex, targetIndex, _targetSeq, _ord, si, sid, _eid)
 		self.sqh = sqh+1
 	end
 end
+
 function mu:aura(sourceIndex, targetIndex, targetSeq, ord, si, sid, eid)
 	local board = self.board
 	local su, tu = board[sourceIndex], board[targetIndex]
@@ -780,6 +855,7 @@ function mu:aura(sourceIndex, targetIndex, targetSeq, ord, si, sid, eid)
 		enq(self.queue, self.turn+si.echo, {"damage", sourceIndex, targetIndex, f32_pim(si.damageATK, su.atk), "EEcho", sid, ord=ordt})
 	end
 end
+
 function mu:nuke(sourceIndex, targetIndex, targetSeq, ord, si, sid, _eid)
 	local board = self.board
 	local su, tu = board[sourceIndex], board[targetIndex]
@@ -791,6 +867,7 @@ function mu:nuke(sourceIndex, targetIndex, targetSeq, ord, si, sid, _eid)
 		enq(self.queue, self.turn+echo, {"damage", sourceIndex, targetIndex, points, "Tick", sid, ord=ord-1e6+targetSeq})
 	end
 end
+
 function mu:nukem(sourceIndex, targetIndex, _targetSeq, _ord, si, sid, _eid)
 	local su = self.board[sourceIndex]
 	local sATK, d = su.atk, si.damageATK
@@ -800,6 +877,7 @@ function mu:nukem(sourceIndex, targetIndex, _targetSeq, _ord, si, sid, _eid)
 	end
 	self.sqh = sqh+1
 end
+
 function mu:heal(sourceIndex, targetIndex, _targetSeq, ord, si, sid, _eid)
 	local board = self.board
 	local su, tu = board[sourceIndex], board[targetIndex]
@@ -811,18 +889,20 @@ function mu:heal(sourceIndex, targetIndex, _targetSeq, ord, si, sid, _eid)
 		enq(self.queue, self.turn+si.shroudTurns, {"unshroud", sourceIndex, targetIndex, ord=ord-80})
 	end
 end
+
 function mu:taunt(sourceIndex, targetIndex, _targetSeq, ord, si, sid, _eid)
 	local tu = self.board[targetIndex]
 	tu.taunt = sourceIndex
 	enq(self.queue, self.turn+si.duration, {"untaunt", sourceIndex, targetIndex, sid, ord=ord-8e5})
 end
+
 function mu:cast(sourceIndex, sid, recast, qe)
 	local board = self.board
 	local su = board[sourceIndex]
 	if su.curHP <= 0 and sourceIndex >= 0 then
 		return
 	elseif self.overnext then
-		self.over, self.overnext = true
+		self.over, self.overnext = true, nil
 		return
 	end
 	local si, ord = SpellInfo[sid], (qe.ord or 0)+recast*40
@@ -833,6 +913,7 @@ function mu:cast(sourceIndex, sid, recast, qe)
 	end
 	return mu.qcast(self, sourceIndex, sid, si[1] and 1 or 0, ord-1)
 end
+
 function mu:qcast(sourceIndex, sid, eid, ord1, forkTarget)
 	local si, board = SpellInfo[sid], self.board
 	local ne = #si
@@ -911,6 +992,7 @@ local function resolveRange(bFirst, b, f, bh, bl, fh, fl)
 		end
 	end
 end
+
 local function resolveDeath(board, a, b, inOrder)
 	if not inOrder then
 		a, b = b, a
@@ -940,6 +1022,7 @@ local function resolveDeath(board, a, b, inOrder)
 		end
 	end
 end
+
 local function prepareDeath(self, turn, du, deadIndex)
 	local dside, masks, horizon = deadIndex < 5
 	for k,v in pairs(self.queue) do
@@ -970,9 +1053,10 @@ local function prepareDeath(self, turn, du, deadIndex)
 	end
 	du.dmasks, du.dhorizon, du.drA, du.drB, du.drC = masks, horizon, 0, 0, 0
 end
+
 local function prepareTurn(self)
 	local board, turn = self.board, self.turn
-	
+
 	local mlive = 0
 	for b=0,12 do
 		local e = board[b]
@@ -1034,6 +1118,7 @@ local function prepareTurn(self)
 	end
 	self.saoSkip = nil
 end
+
 local function sortAttackOrder(self, q)
 	local board, bo, bom = self.board, self.boardOrder, self.bom
 	for b=0,12 do
@@ -1133,16 +1218,21 @@ function VSI:Turn()
 		sortAttackOrder(self, q)
 		self.unfinishedTurn = true
 	end
+
 	local qi, at
 	for i=#q, 1, -1 do
 		qi, q[i] = q[i], nil
 		at = qi[1]
+		local ps = { unpack(qi, 2) };
 		mu[at](self, unpack(qi, 2))
 		sqh = self.sqh
 		while sqh <= self.sqt do
 			local e = sq[sqh]
-			self.sqh, sq[sqh] = sqh + 1
-			mu[e[1]](self, unpack(e, 2))
+			self.sqh, sq[sqh] = sqh + 1, nil
+			local action = e[1];
+			local func = mu[action];
+			local params = { unpack(e, 2) };
+			func(self, unpack(e, 2))
 			sqh = self.sqh
 		end
 		if self.over then
@@ -1166,6 +1256,7 @@ function VSI:Turn()
 	self.checkpoints[turn] = self:CheckpointBoard()
 	self.queue[turn], self.unfinishedTurn = next(q) and q, nil
 end
+
 function VSI:Run(stopCB)
 	if self.over ~= "r" then
 		if self.unfinishedTurn then
@@ -1181,6 +1272,7 @@ function VSI:Run(stopCB)
 			return true
 		end
 	end
+
 	if self.forks and not self.prime then
 		local i, forks = self.res.n, self.forks
 		while i <= #forks do
@@ -1191,6 +1283,7 @@ function VSI:Run(stopCB)
 		end
 	end
 end
+
 function VSI:CheckpointBoard()
 	local board = self.board
 	local c = ""
@@ -1203,6 +1296,7 @@ function VSI:CheckpointBoard()
 	end
 	return c
 end
+
 function VSI:Clone()
 	local lim, forks = self.forkLimit, self.forks
 	if lim and lim <= (forks and #forks or 0) then
@@ -1247,6 +1341,7 @@ function VSI:Clone()
 	n.prime, n.forkID, n.forkOracle = self.prime or self, #forks
 	return n
 end
+
 function VSI:AddFightLogOracles(log)
 	function self.forkOracle(turn, source, spell)
 		local la = log[turn]
@@ -1258,6 +1353,7 @@ function VSI:AddFightLogOracles(log)
 			end
 		end
 	end
+
 	function self.finalHitOracle(turn, source, target, sid, _oldHP, _oldRange)
 		local la = log[turn]
 		la = la and la.events
@@ -1274,6 +1370,7 @@ function VSI:AddFightLogOracles(log)
 		end
 		return true
 	end
+
 	function self.firstHitOracle(turn, a, b)
 		local la = log[turn]
 		la = la and la.events
@@ -1310,8 +1407,9 @@ local function addActorProps(a)
 	a.stacks = {}
 	return a
 end
+
 local function addCasts(q, slot, spells, aa, missingSpells, pmask)
-	for i=1,#spells do
+	for i = 1, #spells do
 		local s = spells[i]
 		local sid = s.autoCombatSpellID
 		local si = SpellInfo[sid]
@@ -1332,9 +1430,11 @@ local function addCasts(q, slot, spells, aa, missingSpells, pmask)
 	enqc(q, 1, {"cast", slot, aa, 1, ord=(1+slot)*1e7 + 5e6})
 	return missingSpells, pmask
 end
-function VS:New(team, encounters, envSpell, mid, mscalar, forkLimit)
-	local q, board, nf, pmask, missingSpells = {}, {}, 0, 0
-	for slot, f in pairs(team) do
+
+function VS:New(followers, encounters, envSpell, mid, mscalar, forkLimit)
+	local q, board, nf, pmask, missingSpells = {}, {}, 0, 0, nil;
+
+	for slot, f in pairs(followers) do
 		if f.stats then
 			f.attack, f.health, f.maxHealth = f.stats.attack, f.stats.currentHealth, f.stats.maxHealth
 		end
@@ -1343,14 +1443,15 @@ function VS:New(team, encounters, envSpell, mid, mscalar, forkLimit)
 		missingSpells, pmask = addCasts(q, rf.slot, sa, aa, missingSpells, pmask)
 		board[rf.slot], nf = addActorProps(rf), nf + 1
 	end
-	for i=1,#encounters do
+
+	for i = 1, #encounters do
 		local e = encounters[i]
 		local rf, sa = {maxHP=e.maxHealth, curHP=e.maxHealth, atk=e.attack, slot=e.boardIndex}, e.autoCombatSpells
 		local aa = VS:GetAutoAttack(e.role, rf.slot, mid, sa and sa[1] and sa[1].autoCombatSpellID)
 		missingSpells, pmask = addCasts(q, rf.slot, sa, aa, missingSpells, pmask)
 		board[e.boardIndex] = addActorProps(rf)
 	end
-	
+
 	local environmentSID = envSpell and envSpell.autoCombatSpellID
 	local esi = SpellInfo[environmentSID]
 	if environmentSID and not esi then
@@ -1361,7 +1462,7 @@ function VS:New(team, encounters, envSpell, mid, mscalar, forkLimit)
 		board[-1] = addActorProps({atk=(esi.cATKa or 0) + (esi.cATKb or 0)*mscalar, curHP=1e9, maxHP=1e9, slot=-1})
 		enqc(q, esi.firstTurn or 1, {"cast", -1, environmentSID, 1+envSpell.cooldown, ord=0})
 	end
-	
+
 	local boardOrder = {}
 	for b=0,12 do
 		local e = board[b]
@@ -1371,19 +1472,30 @@ function VS:New(team, encounters, envSpell, mid, mscalar, forkLimit)
 	end
 	
 	local ii = setmetatable({
-		board=board, turn=0, queue=q, sq={}, sqh=1, sqt=0,
-		liveFriends=nf, liveEnemies=#encounters, over=nf == 0,
-		checkpoints={}, boardOrder=boardOrder, bom={[-1]=14},
+		board=board,
+		turn=0,
+		queue=q,
+		sq={},
+		sqh=1,
+		sqt=0,
+		liveFriends=nf,
+		liveEnemies=#encounters,
+		over=nf == 0,
+		checkpoints={},
+		boardOrder=boardOrder,
+		bom={[-1]=14},
 		res={min={}, max={}, hadWins=false, hadLosses=false, hadDrops=false, isFinished=false, n=0},
 		pmask=pmask,
 		forkLimit=forkLimit,
 	}, VSIm)
+
 	ii.checkpoints[0] = ii:CheckpointBoard()
 	if ii.over then
 		registerTraceResult(ii)
 	end
 	return ii, missingSpells
 end
+
 function VS:SetSpellInfo(t)
 	SpellInfo = t
 end
