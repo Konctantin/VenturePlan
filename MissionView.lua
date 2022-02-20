@@ -111,33 +111,82 @@ local function EnvironmentEffect_OnNameUpdate(self_name)
 	ee:SetHitRectInsets(0, min(-100, -self_name:GetStringWidth()), 0, 0)
 end
 local GetSim do
-	local simArch, simMS, simTag
+	local simArch, simTag, simHadMS
+	local deadline, rendCooldown, rendCallback, rendOwner
 	function EV:GARRISON_MISSION_NPC_CLOSED()
-		simArch, simMS, simTag = nil
+		if rendOwner then
+			rendOwner:SetScript("OnUpdate", nil)
+		end
+		simArch, simTag, rendCallback, rendOwner = nil
 	end
-	function GetSim()
+	local function GetGroupTags()
 		local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
 		local mi  = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
-		local mid = mi.missionID
-		local team = {}
-		local tag = mid .. ":" .. (mi.missionScalar or 0)
+		local tag, htag = (mi.missionID) .. ":" .. (mi.missionScalar or 0), ""
 		for i=0,4 do
 			local ii = f[i].info
 			if ii then
 				local stats = ii.autoCombatantStats
-				team[#team+1] = {
-					boardIndex=i, role=ii.role, stats=stats, spells=f[i].autoCombatSpells
-				}
-				tag = tag .. ":" .. i .. ":" .. stats.currentHealth .. ":" .. stats.attack .. ":" .. ii.followerID
+				tag = tag .. ":" .. i .. ":" .. stats.attack .. ":" .. ii.followerID
+				htag = htag .. ":" .. stats.currentHealth
 			end
 		end
-		if tag ~= simTag then
-			local eei = C_Garrison.GetAutoMissionEnvironmentEffect(mid)
-			local mdi = C_Garrison.GetMissionDeploymentInfo(mid)
-			local espell = eei and eei.autoCombatSpellInfo
-			simTag, simArch, simMS = tag, T.VSim:New(team, mdi.enemies, espell, mid, mi.missionScalar, 100)
+		htag = tag .. htag
+		return htag, tag
+	end
+	local function GetGroupData()
+		local team, f = {}, CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+		for i=0,4 do
+			local ii = f[i].info
+			if ii then
+				team[#team+1] = {boardIndex=i, role=ii.role, stats=ii.autoCombatantStats, spells=f[i].autoCombatSpells}
+			end
 		end
-		return simArch, simMS
+		return team
+	end
+	local function qdeadline()
+		return debugprofilestop() > deadline
+	end
+	local function OnUpdate(self)
+		if not simArch or not GameTooltip:IsOwned(rendOwner) then
+			self:SetScript("OnUpdate", nil)
+			return
+		end
+		deadline = debugprofilestop() + 12
+		simArch:Run(qdeadline)
+		local res = simArch.res
+		rendCooldown = (rendCooldown or 8) - 1
+		if res and (res.isFinished or (res.hadWins and res.hadLosses)) then
+			simArch.outOfDateHealth = GetGroupTags() ~= simTag
+			rendCallback(rendOwner, simArch, simHadMS)
+			self:SetScript("OnUpdate", nil)
+			rendOwner, rendCallback, rendCooldown = nil
+		elseif rendCooldown <= 0 then
+			rendCallback(rendOwner, simArch, simHadMS)
+			rendCooldown = nil
+		end
+	end
+	function GetSim(owner, callback)
+		local tag = GetGroupTags()
+		if tag ~= simTag then
+			local team = GetGroupData()
+			local mi  = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
+			local eei = C_Garrison.GetAutoMissionEnvironmentEffect(mi.missionID)
+			local mdi = C_Garrison.GetMissionDeploymentInfo(mi.missionID)
+			local espell, ms = eei and eei.autoCombatSpellInfo
+			simTag, simArch, ms = tag, T.VSim:New(team, mdi.enemies, espell, mi.missionID, mi.missionScalar)
+			simHadMS, simArch.dropForks = ms and next(ms) and true or nil, true
+			deadline = debugprofilestop() + 40
+			simArch:Run(qdeadline)
+		end
+		local res = simArch and simArch.res
+		local onUp = res and not res.isFinished and not (res.hadWins and res.hadLosses) and OnUpdate or nil
+		owner:SetScript("OnUpdate", onUp)
+		rendOwner, rendCallback, rendCooldown = onUp and owner, onUp and callback, nil
+		if callback then
+			callback(owner, simArch, simHadMS)
+		end
+		return simArch
 	end
 end
 local function Predictor_OnEnter(self)
@@ -148,34 +197,36 @@ local function Predictor_OnEnter(self)
 	GameTooltip:AddLine(L'"Do not believe its lies! Balance druids are not emergency rations."', 1, 0.835, 0.09, 1)
 	GameTooltip:Show()
 end
-local function Predictor_OnClick(self)
+local function Predictor_ShowResult(self, sim, incompleteModel)
 	GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
-	local sim, ms = GetSim()
-	sim:Run()
 	local res = sim.res
-	local incompleteModel = ms and next(ms) and true
 	local rngModel = res.hadDrops or (res.hadWins and res.hadLosses)
+	local inProgress = not res.isFinished and not rngModel
 	local hprefix = (incompleteModel and "|TInterface/EncounterJournal/UI-EJ-WarningTextIcon:0|t " or "")
+	if inProgress then
+		hprefix = hprefix .. "|cffff3300" .. L"Preliminary:" .. "|r "
+	end
 	if rngModel then
 		GameTooltip:SetText(hprefix .. L"Curse of Uncertainty", 1, 0.20, 0)
 	else
 		GameTooltip:SetText(hprefix .. (sim.won and L"Victorious" or L"Defeated"), 1,1,1)
 	end
+
 	if incompleteModel then
-		GameTooltip:AddLine(L"Not all abilities have been taken into account." .. "|n ", 0.9,0.25,0.15)
+		GameTooltip:AddLine(L"Not all abilities have been taken into account.", 0.9,0.25,0.15)
+	end
+	if inProgress then
+		GameTooltip:AddLine(L"Not all outcomes have been examined.", 0.9, 0.25, 0.15, 1)
+	end
+	if sim.outOfDateHealth then
+		GameTooltip:AddLine(L"Companion health has changed.", 0.9, 0.25, 0.15, 1)
+	end
+	if incompleteModel or inProgress or sim.outOfDateHealth then
+		GameTooltip:AddLine(" ")
 	end
 
 	if rngModel then
-		if res.hadDrops then
-			GameTooltip:AddLine(L"The guide shows you many possible futures. Too many. It is impossible to draw conclusions about your party's chances from this.", 1,1,1,1)
-			if not res.hadWins then
-				GameTooltip:AddLine(L"For what it is worth, everything you remember ended badly.", 1,1,1,1)
-			elseif not res.hadLosses then
-				GameTooltip:AddLine(L"For what it is worth, everything you remember ended well.", 1,1,1,1)
-			end
-		else
-			GameTooltip:AddLine(L"The guide shows you a number of possible futures. In some, the adventure ends in triumph; in others, a particularly horrible failure.", 1,1,1,1)
-		end
+		GameTooltip:AddLine(L"The guide shows you a number of possible futures. In some, the adventure ends in triumph; in others, a particularly horrible failure.", 1,1,1,1)
 		if not incompleteModel then
 			GameTooltip:AddLine(L'"With your luck, there is only one way this ends."', 1, 0.835, 0.09, 1)
 		end
@@ -187,16 +238,19 @@ local function Predictor_OnClick(self)
 		end
 		if sim.won then
 			local troopCount, troopHealth1, troopHealth2, troopHealthMax = 0, 0, 0, 0
+			local rewardXP = MissionRewards.xpGain or 0
 			for i=0,4 do
 				local hmin, hmax = lo[i], hi[i]
 				local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex[i]
 				local e = sim.board[i]
 				if f and f.name and f:IsShown() and f.info and hmin and e then
-					if f.info.isAutoTroop then
+					local fi = f.info
+					if fi.isAutoTroop then
 						troopCount, troopHealth1, troopHealth2, troopHealthMax = troopCount + 1, troopHealth1 + hmin, troopHealth2 + hmax, troopHealthMax + (e.maxHP or 0)
 					else
 						local chp = hmin == hmax and hmin or ((hmin == 0 and "|cffff40200|r" or hmin) .. " |cffffffff-|r " .. hmax)
-						GameTooltip:AddDoubleLine(f.name, chp .. "/" .. e.maxHP, 1,1,1, hmax > 0 and 0 or 1, hmax > 0 and 1 or 0.3, 0.15)
+						local isUp = fi.xp and fi.levelXP and not fi.isMaxLevel and (fi.xp + rewardXP) >= fi.levelXP and "|A:bags-greenarrow:0:0|a" or ""
+						GameTooltip:AddDoubleLine(f.name .. isUp, chp .. "/" .. e.maxHP, 1,1,1, hmax > 0 and 0 or 1, hmax > 0 and 1 or 0.3, 0.15)
 					end
 				end
 			end
@@ -217,10 +271,16 @@ local function Predictor_OnClick(self)
 			GameTooltip:AddLine((L"Remaining enemy health: %s"):format("|cffffffff" .. chp .. " (" .. cr .. "%)|r"), c.r, c.g, c.b)
 		end
 		if not incompleteModel then
-			GameTooltip:AddLine(L'"Was there ever any doubt?"', 1, 0.835, 0.09, 1)
+			if not sim.won then
+				GameTooltip:AddLine(" ")
+			end
+			GameTooltip:AddLine(inProgress and (L'"%s possible futures and counting..."'):format(BreakUpLargeNumbers(res.n or 0)) or L'"Was there ever any doubt?"', 1, 0.835, 0.09)
 		end
 	end
 	GameTooltip:Show()
+end
+local function Predictor_OnClick(self)
+	GetSim(self, Predictor_ShowResult)
 end
 local function Predictor_OnLeave(self)
 	if GameTooltip:IsOwned(self) then
@@ -271,6 +331,20 @@ local function MissionView_OnHide()
 	CovenantMissionFrameFollowers.MaterialFrame:SetParent(CovenantMissionFrameFollowers)
 	CovenantMissionFrameFollowers.HealAllButton:SetParent(CovenantMissionFrameFollowers)
 end
+local function Mission_StoreTentativeGroup()
+	local g, hc = {}, false
+	local mid = CovenantMissionFrame.MissionTab.MissionPage.missionInfo.missionID
+	local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+	for i=0,5 do
+		local fi = f[i]
+		if fi and fi.name and fi.info and fi:IsShown() then
+			g[i], hc = fi.info.followerID, hc or not fi.info.isAutoTroop
+		end
+	end
+	if hc then
+		U.StoreMissionGroup(mid, g, true)
+	end
+end
 
 function EV:I_ADVENTURES_UI_LOADED()
 	local MP = CovenantMissionFrame.MissionTab.MissionPage
@@ -308,6 +382,7 @@ function EV:I_ADVENTURES_UI_LOADED()
 	hooksecurefunc(MP.Stage.EnvironmentEffectFrame.Name, "SetText", EnvironmentEffect_OnNameUpdate)
 	hooksecurefunc(CovenantMissionFrame, "AssignFollowerToMission", MissionGroup_OnUpdate)
 	hooksecurefunc(CovenantMissionFrame, "RemoveFollowerFromMission", MissionGroup_OnUpdate)
+	MP.CloseButton:HookScript("PreClick", Mission_StoreTentativeGroup)
 	local s = CovenantMissionFrame.MissionTab.MissionPage.Stage
 	s.Title:SetPoint("LEFT", s.Header, "LEFT", 100, 9)
 	local ir = T.CreateObject("InlineRewardBlock", s)

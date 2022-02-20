@@ -1,4 +1,5 @@
 local U, _, T = {}, ...
+local EV = T.Evie
 local L = newproxy(true) do
 	local LT = T.LT or {}
 	getmetatable(L).__call = function(_, k)
@@ -16,6 +17,7 @@ local overdesc = {
 	[229]=L"Reduces damage taken by a random ally by 50%. Forever.",
 	[301]={L"Every other turn, a random enemy is attacked for {}% of their maximum health.", "damagePerc"},
 	[227]={L"Every other turn, a random enemy is attacked for {}% of their maximum health.", "damagePerc"},
+	[25]={L"Inflicts {} damage to all enemies in melee, and increases own damage dealt by 20% for three turns.", "damageATK"},
 }
 
 local GetMaskBoard do
@@ -83,6 +85,312 @@ local function FormatSpellPulse(si)
 	end
 end
 
+do -- Tentative Groups
+	local groups, followerMissionID = {}, {}
+	local autoTroops = {["0xFFFFFFFFFFFFFFFF"]=1, ["0xFFFFFFFFFFFFFFFE"]=1}
+	function EV:GARRISON_MISSION_NPC_CLOSED()
+		groups, followerMissionID = {}, {}
+	end
+	function EV:GARRISON_MISSION_STARTED(_, mid)
+		local g = groups[mid]
+		if g then
+			for i=0,4 do
+				followerMissionID[g[i] or 0] = nil
+			end
+			groups[mid], followerMissionID[0] = nil
+			EV("I_TENTATIVE_GROUPS_CHANGED")
+		end
+	end
+	local function GetFollowerInfo(fid)
+		local fi = C_Garrison.GetFollowerInfo(fid)
+		fi.autoCombatSpells = C_Garrison.GetFollowerAutoCombatSpells(fid, fi.level)
+		fi.autoCombatantStats = C_Garrison.GetFollowerAutoCombatStats(fid)
+		return fi
+	end
+	function U.ShowMission(mid, listFrame)
+		local mi, mi2, g = C_Garrison.GetMissionDeploymentInfo(mid), C_Garrison.GetBasicMissionInfo(mid), groups[mid]
+		if mi and mi2 then
+			for k,v in pairs(mi2) do
+				mi[k] = mi[k] or v
+			end
+			mi.missionID = mid
+			mi.encounterIconInfo = C_Garrison.GetMissionEncounterIconInfo(mid)
+			PlaySound(SOUNDKIT.UI_GARRISON_COMMAND_TABLE_SELECT_MISSION)
+			for i=0, g and 4 or -1 do
+				followerMissionID[g[i] or 0] = nil
+			end
+			groups[mid], followerMissionID[0] = nil
+			local MP = CovenantMissionFrame.MissionTab.MissionPage
+			MP:Show()
+			CovenantMissionFrame:ShowMission(mi)
+			listFrame:Hide()
+			for i=0, g and 4 or -1 do
+				local f = g[i]
+				if f then
+					CovenantMissionFrame:AssignFollowerToMission(MP.Board.framesByBoardIndex[i], GetFollowerInfo(f))
+				end
+			end
+		end
+	end
+	function U.StoreMissionGroup(mid, gt, disbandGroups)
+		if gt and next(gt) ~= nil then
+			for _, v in pairs(gt) do
+				U.ReleaseTentativeFollower(v, disbandGroups, true)
+			end
+			groups[mid] = gt
+			for _, v in pairs(gt) do
+				if not autoTroops[v] then
+					followerMissionID[v] = mid
+				end
+			end
+			EV("I_TENTATIVE_GROUPS_CHANGED")
+		elseif gt == nil and groups[mid] then
+			for _, v in pairs(groups[mid]) do
+				followerMissionID[v] = nil
+			end
+			groups[mid] = nil
+			EV("I_TENTATIVE_GROUPS_CHANGED")
+		end
+	end
+	function U.ReleaseTentativeFollower(fid, disbandGroup, doNotNotify)
+		local mid = followerMissionID[fid]
+		local g = groups[mid]
+		if not g then
+			return
+		end
+		for k,v in pairs(g) do
+			if disbandGroup or v == fid then
+				g[k], followerMissionID[v] = nil
+			end
+		end
+		if next(g) == nil then
+			groups[mid] = nil
+		end
+		if g and not doNotNotify then
+			EV("I_TENTATIVE_GROUPS_CHANGED")
+		end
+	end
+	function U.ReleaseTentativeFollowerForMission(fid, mid, disbandGroup, doNotNotify)
+		local omid = followerMissionID[fid]
+		if omid and omid ~= mid then
+			U.ReleaseTentativeFollower(fid, disbandGroup, doNotNotify)
+		end
+	end
+	function U.MissionHasTentativeGroup(mid)
+		return groups[mid] ~= nil
+	end
+	function U.GetTentativeMissionTroopCount(mid)
+		local g, r = groups[mid], 0
+		for i=0, g and 4 or -1 do
+			r = r + (autoTroops[g[i]] and 1 or 0)
+		end
+		return r
+	end
+	function U.FollowerHasTentativeGroup(fid)
+		local mid = followerMissionID[fid]
+		return groups[mid] and mid
+	end
+	function U.DisbandTentativeGroups()
+		groups, followerMissionID = {}, {}
+		EV("I_TENTATIVE_GROUPS_CHANGED")
+	end
+	function U.HaveTentativeGroups()
+		return next(groups) ~= nil
+	end
+	function U.SendTentativeGroups()
+		for mid, g in pairs(groups) do
+			U.SendMissionGroup(mid, g)
+		end
+	end
+	local function nextTent(_, k)
+		local mid, g = next(groups, k)
+		if mid then
+			local nt = 0
+			for i=0,4 do
+				if autoTroops[g[i]] then
+					nt = nt + 1
+				end
+			end
+			return mid, nt
+		end
+	end
+	function U.EnumerateTentativeGroups()
+		return nextTent
+	end
+end
+do -- startQueue
+	local startQueue, startQueueLength = {}, 0
+	function EV:GARRISON_MISSION_STARTED(_, mid)
+		if startQueue[mid] then
+			startQueueLength, startQueue[mid] = startQueueLength - 1, nil
+			EV("I_MISSION_QUEUE_CHANGED")
+			PlaySound(44323)
+		end
+	end
+	function EV:GARRISON_MISSION_NPC_CLOSED()
+		startQueue, startQueueLength = {}, 0
+	end
+	local function startMissionGroup(mid, g)
+		local mi = C_Garrison.GetBasicMissionInfo(mid)
+		for j=1,mi and mi.followers and #mi.followers or 0 do
+			for b=0,4 do
+				C_Garrison.RemoveFollowerFromMission(mid, mi.followers[j], b)
+			end
+		end
+		local ok = mi and mi.canStart
+		for i=0,mi and 4 or -1 do
+			ok = ok and (g[i] == nil or C_Garrison.AddFollowerToMission(mid, g[i], i))
+		end
+		return ok and (C_Garrison.StartMission(mid) or true) or false
+	end
+	local function queuePing()
+		if next(startQueue) then
+			C_Timer.After(0.5, queuePing)
+		end
+		local oc = startQueueLength
+		for mid, g in pairs(startQueue) do
+			if not startMissionGroup(mid, g) then
+				startQueueLength, startQueue[mid] = startQueueLength-1, nil
+			end
+		end
+		if oc ~= startQueueLength then
+			EV("I_MISSION_QUEUE_CHANGED")
+		end
+	end
+	function U.IsStartingMissions()
+		return startQueueLength > 0 and startQueueLength
+	end
+	function U.StopStartingMissions()
+		startQueue, startQueueLength = {}, 0
+	end
+	function U.IsMissionInStartQueue(mid)
+		return startQueue[mid] ~= nil
+	end
+	function U.SendMissionGroup(mid, g)
+		local ng, oql = {}, startQueueLength
+		for i=0,4 do
+			ng[i] = g[i]
+		end
+		startQueue[mid], startQueueLength = ng, oql + (startQueue[mid] and 0 or 1)
+		if oql == 0 then
+			queuePing()
+		end
+		EV("I_MISSION_QUEUE_CHANGED")
+	end
+end
+do -- completeQueue
+	local curStack, curState, curIndex
+	local completionStep, lastAction, delayIndex, delayMID
+	local function After(t, f)
+		if t == 0 then
+			securecall(f)
+		else
+			C_Timer.After(t, f)
+		end
+	end
+	local delayOpen, delayRoll do
+		local function delay(state, f, d)
+			local function delay(minDelay)
+				if curState == state and curIndex == delayIndex and curStack[delayIndex].missionID == delayMID then
+					local time = GetTime()
+					if not minDelay and (not lastAction or (time-lastAction >= d)) then
+						lastAction = GetTime()
+						f(curStack[curIndex].missionID)
+						After(d, delay)
+					else
+						After(math.max(0.1, d + lastAction - time, minDelay or 0), delay)
+					end
+				end
+			end
+			return delay
+		end
+		delayOpen = delay("COMPLETE", C_Garrison.MarkMissionComplete, 0.4)
+		delayRoll = delay("BONUS", C_Garrison.MissionBonusRoll, 0.4)
+	end
+	local function delayStep()
+		completionStep("GARRISON_MISSION_NPC_OPENED")
+	end
+	local function delayDone()
+		local os = curState
+		if os == "ABORT" or os == "DONE" then
+			curState, curStack, curIndex, delayMID, delayIndex = nil
+			EV("I_COMPLETE_QUEUE_UPDATE", os)
+		end
+	end
+
+	local function whineAboutUnexpectedState(msg, mid, suf)
+		local et = msg .. ": " .. tostring(mid) .. tostring(suf or "") .. " does not fit (" .. curIndex .. ";"
+		for i=1,#curStack do
+			local e = curStack[i]
+			et = et .. " " .. tostring(e and e.missionID or "?") .. (e and e.skipped and "S" or "") .. (e and e.failed and "F" or "")
+		end
+		return et .. ")"
+	end
+	function completionStep(ev, ...)
+		if not curState then return end
+		local mi = curStack[curIndex]
+		while mi and (mi.succeeded or mi.failed) do
+			mi, curIndex = curStack[curIndex+1], curIndex + 1
+		end
+		if (ev == "GARRISON_MISSION_NPC_CLOSED" and mi) or not mi then
+			curState = mi and "ABORT" or "DONE"
+			After(... == "IMMEDIATE" and 0 or 0.1, delayDone)
+		elseif curState == "NEXT" and ev == "GARRISON_MISSION_NPC_OPENED" then
+			EV("I_COMPLETE_QUEUE_UPDATE", "NEXT")
+			if mi.completed then
+				curState, delayIndex, delayMID = "BONUS", curIndex, mi.missionID
+				delayRoll(... ~= "IMMEDIATE" and 0.2)
+			else
+				curState, delayIndex, delayMID = "COMPLETE", curIndex, mi.missionID
+				delayOpen(... ~= "IMMEDIATE" and 0.2)
+			end
+		elseif curState == "COMPLETE" and ev == "GARRISON_MISSION_COMPLETE_RESPONSE" then
+			local mid, cc, ok, _brOK = ...
+			if mid ~= mi.missionID and not cc then return end
+			if mid == mi.missionID or securecall(error, whineAboutUnexpectedState("Unexpected mission completion", mid, (cc and "C" or "c") .. (ok and "K" or "k")), 2) then
+				if ok then
+					curState = "BONUS"
+				else
+					mi.failed, curState, curIndex = cc and true or nil, "NEXT", curIndex + 1
+				end
+				if ok then
+					delayIndex, delayMID = curIndex, mi.missionID
+					delayRoll(0.2)
+				else
+					-- Awkward: need other GMCR handlers to finish before a certain IMCS handler runs
+					C_Timer.After(0, function()
+						EV("I_MISSION_COMPLETION_STEP", mid, false, mi)
+					end)
+					After(0.45, delayStep)
+				end
+			end
+		elseif curState == "BONUS" and ev == "GARRISON_MISSION_BONUS_ROLL_COMPLETE" then
+			local mid, ok = ...
+			if mid ~= mi.missionID then
+				securecall(error, whineAboutUnexpectedState("Unexpected bonus roll completion", mid, ok and "K" or "k"), 2)
+			elseif ok then
+				mi.succeeded, curState, curIndex = true, "NEXT", curIndex + 1
+				EV("I_MISSION_COMPLETION_STEP", mid, true, mi)
+			end
+		end
+	end
+	EV.GARRISON_MISSION_NPC_OPENED, EV.GARRISON_MISSION_NPC_CLOSED = completionStep, completionStep
+	EV.GARRISON_MISSION_BONUS_ROLL_COMPLETE, EV.GARRISON_MISSION_COMPLETE_RESPONSE = completionStep, completionStep
+
+	function U.IsCompletingMissions()
+		return curState ~= nil and (#curStack-curIndex+1) or nil
+	end
+	function U.StartCompletingMissions()
+		curStack = C_Garrison.GetCompleteMissions(123)
+		curState, curIndex = "NEXT", 1
+		completionStep("GARRISON_MISSION_NPC_OPENED", "IMMEDIATE")
+	end
+	function U.StopCompletingMissions()
+		if curState then
+			completionStep("GARRISON_MISSION_NPC_CLOSED", "IMMEDIATE")
+		end
+	end
+end
 
 function U.GetTimeStringFromSeconds(sec, shorter, roundUp, disallowSeconds)
 	local h = roundUp and math.ceil or math.floor
@@ -207,7 +515,7 @@ function U.GetAbilityGuide(spellID, boardIndex, boardMask, padHeight)
 	if si.healATK or si.damageATK or si.healPerc or si.damagePerc then
 		local p = FormatSpellPulse(si)
 		if p then
-			guideLine = L"Pulse:" .. " " .. p .. (guideLine and "    " .. guideLine or "")
+			guideLine = L"Ticks:" .. " " .. p .. (guideLine and "    " .. guideLine or "")
 		end
 	end
 	if si.firstTurn then
@@ -224,7 +532,8 @@ function U.GetAbilityDescriptionOverride(spellID, atk)
 	if od then
 		if type(od) == "table" then
 			local vk = od[2]
-			local rv = vk == "damagePerc" and si[vk] or si[vk] and atk and math.floor(si[vk]*(atk or -1)/100) or ""
+			local vv = si and (si[vk] or si[1] and si[1][vk] or si[2] and si[2][vk])
+			local rv = vk == "damagePerc" and vv or vv and atk and math.floor(vv*(atk or -1)/100) or ""
 			od = od[1]:gsub("{}", rv)
 		end
 		return od

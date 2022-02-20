@@ -84,7 +84,8 @@ local function CommonTooltip_OnEnter(self)
 	elseif self.currencyID then
 		GameTooltip:SetCurrencyByID(self.currencyID)
 		if self.currencyID == 1889 then
-			GameTooltip:AddLine("|nCurrent Progress: " .. "|cffffffff" .. C_CurrencyInfo.GetCurrencyInfo(self.currencyID).quantity)
+			local ci = C_CurrencyInfo.GetCurrencyInfo(self.currencyID)
+			GameTooltip:AddLine("|n" .. (L"Current Progress: %s"):format("|cffffffff" .. (ci and ci.quantity or "??")))
 			GameTooltip:Show()
 		end
 	elseif self.achievementID then
@@ -165,13 +166,13 @@ local function MissionButton_OnClick(self)
 		if self.missionID and self.ProgressBar:IsShown() and self.completableAfter and self.completableAfter <= GetTime()
 		   and self.ProgressBar:IsMouseOver(6, -6, -6, 6) then
 			local mid = self.missionID
-					local cm = C_Garrison.GetCompleteMissions(123)
-					for i=1,#cm do
-						if cm[i].missionID == mid then
-							cm[i].encounterIconInfo = C_Garrison.GetMissionEncounterIconInfo(self.missionID)
-							CovenantMissionFrame:InitiateMissionCompletion(cm[i])
-						end
-					end
+			local cm = C_Garrison.GetCompleteMissions(123)
+			for i=1,#cm do
+				if cm[i].missionID == mid then
+					cm[i].encounterIconInfo = C_Garrison.GetMissionEncounterIconInfo(self.missionID)
+					CovenantMissionFrame:InitiateMissionCompletion(cm[i])
+				end
+			end
 		else
 			self:GetParent():GetParent():ScrollToward(self)
 		end
@@ -181,6 +182,7 @@ local function Progress_UpdateTimer(self)
 	local now, endTime = GetTime(), self.endTime
 	if endTime <= now then
 		self.Fill:SetWidth(math.max(0.01, self:GetWidth()))
+		self.Fill:SetTexCoord(0, 1, 0, 1)
 		self:SetScript("OnUpdate", nil)
 		if self.endText then
 			self.Text:SetText(self.endText)
@@ -191,8 +193,9 @@ local function Progress_UpdateTimer(self)
 		self.endTime, self.duration, self.endText, self.nextUp = nil
 	elseif (self.nextUp or 0) < now then
 		local w, d = self:GetWidth(), self.duration
-		local secsLeft = endTime-now-0.5
-		self.Fill:SetWidth(math.max(0.01, w*(1-(endTime-now)/d)))
+		local secsLeft, p = endTime-now-0.5, math.min(1, 1-(endTime-now)/d)
+		self.Fill:SetWidth(math.max(0.01, w*p))
+		self.Fill:SetTexCoord(0, math.max(1/128, p), 0, 1)
 		self.nextUp = now + math.min(PROGRESS_MIN_STEP/w * d, 0.01 + secsLeft % (secsLeft < 100 and 1 or 60))
 		if self.showTimeRemaining then
 			self.Text:SetText(GetTimeStringFromSeconds(secsLeft, false, true))
@@ -202,7 +205,9 @@ local function Progress_UpdateTimer(self)
 	end
 end
 local function Progress_SetProgress(self, progress)
+	progress = progress > 1 and 1 or progress
 	self.Fill:SetWidth(math.max(0.01,self:GetWidth()*progress))
+	self.Fill:SetTexCoord(0, math.max(1/128, progress), 0, 1)
 	self.endTime, self.duration, self.endText, self.endMotion, self.nextUp = nil
 	self:SetScript("OnUpdate", nil)
 end
@@ -263,7 +268,6 @@ local function PlaySoundKitAndHide(self)
 		PlaySound(self.soundKitOnHide)
 	end
 end
-
 local function CountdownText_OnUpdate(self)
 	local now = GetTime()
 	if now >= self.cdtTick then
@@ -417,6 +421,8 @@ local function FollowerButton_OnClick(self, b)
 			end
 		end
 		CovenantMissionFrame.MissionTab.MissionPage:AddFollower(fid)
+	elseif b == "LeftButton" and IsModifiedClick("CHATLINK") then
+		ChatEdit_InsertLink(C.GetFollowerLink(self.info.followerID))
 	end
 	self:GetParent():SyncToBoard()
 end
@@ -425,9 +431,15 @@ local function FollowerButton_OnEnter(self)
 	if not info then return end
 	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 	U.SetFollowerInfo(GameTooltip, info, info.autoCombatSpells, info.autoCombatantStats, nil, nil, nil, true)
+	local tmid = U.FollowerHasTentativeGroup(info.followerID)
 	if info.status == GARRISON_FOLLOWER_ON_MISSION and info.missionTimeEnd then
 		GameTooltip:AddLine(" ")
 		GameTooltip:AddLine(GARRISON_FOLLOWER_ON_MISSION_WITH_DURATION:format(GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), false, true, true)), 1, 0.4, 0)
+		GameTooltip:Show()
+	elseif tmid and C_Garrison.GetMissionTimes(tmid) then
+		local tn = C_Garrison.GetMissionName(tmid)
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine((L"In Tentative Group - %s"):format(tn or "??"), 1, 0.4, 0)
 		GameTooltip:Show()
 	end
 end
@@ -439,11 +451,12 @@ local function FollowerButton_GetFollowerGUID(self)
 end
 local function FollowerButton_SetInfo(self, info)
 	local onMission = info.status == GARRISON_FOLLOWER_ON_MISSION
+	local inTG = not info.isAutoTroop and U.FollowerHasTentativeGroup(info.followerID)
 	if info.followerID then
 		info.autoCombatSpells = C_Garrison.GetFollowerAutoCombatSpells(info.followerID, info.level)
 		info.autoCombatantStats = info.autoCombatantStats or C_Garrison.GetFollowerAutoCombatStats(info.followerID)
 	end
-	local vc, dc = onMission and 0.25 or 1, onMission and 0.65 or 1
+	local vc, dc = inTG and 0.50 or onMission and 0.25 or 1, onMission and 0.65 or 1
 	local mc = onMission and DISABLED_FONT_COLOR or NORMAL_FONT_COLOR
 	local mtl = info.missionTimeEnd and GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), 2, true, true) or ""
 	self.info = info
@@ -453,7 +466,12 @@ local function FollowerButton_SetInfo(self, info)
 	self.TextLabel:SetTextColor(mc.r, mc.g, mc.b)
 	self.PortraitR:SetVertexColor(dc, dc, dc)
 	self.Portrait:SetVertexColor(vc, vc, vc)
-	self.Portrait2:SetShown(onMission)
+	self.Portrait2:SetShown(inTG or onMission)
+	if inTG then
+		self.Portrait2:SetVertexColor(0.5, 0, 0)
+	else
+		self.Portrait2:SetVertexColor(1, 1, 1)
+	end
 	local ir = info.role
 	self.Role:SetAtlas(ir == 1 and "adventures-dps" or ir == 4 and "adventures-healer" or ir == 5 and "adventures-tank" or "adventures-dps-ranged")
 	self:SetEnabled(not onMission)
@@ -486,7 +504,7 @@ local function FollowerButton_SetInfo(self, info)
 		self.HealthBG:SetGradient("VERTICAL", 0.07,0.07,0.07, 0.14,0.14,0.14)
 	end
 end
-local SortFollowerList do
+local SortFollowerList, CompareFollowerXP do
 	local preferLowHealth
 	local function FollowerList_Compare(a,b)
 		local ac, bc = a.missionTimeEnd, b.missionTimeEnd
@@ -496,6 +514,10 @@ local SortFollowerList do
 			else
 				return not ac
 			end
+		end
+		ac, bc = not a.inTentativeGroup, not b.inTentativeGroup
+		if ac ~= bc then
+			return ac
 		end
 		ac, bc = a.level, b.level
 		if preferLowHealth and ac == bc then
@@ -513,10 +535,47 @@ local SortFollowerList do
 		end
 		return ac > bc
 	end
+	function CompareFollowerXP(a,b)
+		local ac, bc = a.level, b.level
+		if ac == bc then
+			ac, bc = a.xp, b.xp
+		end
+		if ac == bc then
+			ac, bc = a.name, b.name
+		end
+		return ac > bc
+	end
 	function SortFollowerList(list, preferLowHP)
 		preferLowHealth = preferLowHP
+		for i=1,#list do
+			list[i].inTentativeGroup = U.FollowerHasTentativeGroup(list[i].followerID)
+		end
 		table.sort(list, FollowerList_Compare)
 	end
+end
+local function FollowerList_GetTroopHint(ft)
+	local o
+	if #ft > 0 then
+		table.sort(ft, CompareFollowerXP)
+		local m = (#ft + #ft%2)/2
+		local ml = ft[m].level
+		if #ft % 2 == 0 then
+			local fi = ft[m+1]
+			o = "|cffa0a0a0[" .. fi.level .. "]|r |cffffffff" .. fi.name .. "|r"
+			ml = (ml+fi.level)/2
+		end
+		for i=m, 1, -1 do
+			local fi = ft[i]
+			o = "|cffa0a0a0[" .. fi.level .. "]|r |cffffffff" .. fi.name .. "|r" .. (o and "\n" .. o or "")
+			if i == 1 or ft[i].level ~= ft[i-1].level then
+				break
+			end
+		end
+		ml = ("%s%.3g|r"):format(NORMAL_FONT_COLOR_CODE, ml)
+		o = (L"Your troop level is the median level of your companions (%s), rounded down."):format(ml) .. "\n\n" ..
+		    NORMAL_FONT_COLOR_CODE .. L"These companions currently affect your troop level:" .. "|r\n" .. o
+	end
+	return COVENANT_MISSIONS_TUTORIAL_TROOPS .. (o and ("\n\n" .. o) or "")
 end
 local function FollowerList_SyncToBoard(self)
 	local fa = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
@@ -562,6 +621,7 @@ local function FollowerList_Refresh(self, setXPGain)
 			e.missionTimeEnd = e.missionTimeEnd or e.status == GARRISON_FOLLOWER_ON_MISSION and
 				(GetTime() + (C_Garrison.GetFollowerMissionTimeLeftSeconds(e.followerID) or 1)) or nil
 		end
+		self.TroopInfo.tooltipText = FollowerList_GetTroopHint(fl)
 		SortFollowerList(fl, false)
 		for i=1,#fl do
 			local fi = fl[i]
@@ -597,7 +657,7 @@ local function DoomRun_OnEnter(self)
 	local getACS = C_Garrison.GetFollowerAutoCombatStats
 	for i=#ft,1,-1 do
 		local fi = ft[i]
-		if fi.isCollected and not fi.isMaxLevel and fi.status ~= GARRISON_FOLLOWER_ON_MISSION and getACS(fi.followerID).currentHealth > 0 then
+		if fi.isCollected and not fi.isMaxLevel and fi.status ~= GARRISON_FOLLOWER_ON_MISSION and not U.FollowerHasTentativeGroup(fi.followerID) and getACS(fi.followerID).currentHealth > 0 then
 			g[#g+1] = i
 			if #g == 5 then
 				break
@@ -609,14 +669,16 @@ local function DoomRun_OnEnter(self)
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	GameTooltip:SetText(L"Doomed Run")
 	GameTooltip:AddLine(L("Failing this mission grants %s to each companion."):format(xpT), 1,1,1,1)
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine(L"Double click: send these rookies to their doom:", 0.1,0.9,0.1, 1)
-	for i=1,#g do
-		local fi = ft[g[i]]
-		local willLevelUp = fi.levelXP and fi.xp and fi.levelXP - fi.xp <= xpR or false
-		local upTex = willLevelUp and " |A:bags-greenarrow:0:0|a" or ""
-		GameTooltip:AddLine("|cffa0a0a0[" .. fi.level .. "]|r " .. fi.name .. upTex, 1,1,1)
-		g[i] = fi.followerID
+	if #g > 0 then
+		GameTooltip:AddLine(" ")
+		for i=1,#g do
+			local fi = ft[g[i]]
+			local willLevelUp = fi.levelXP and fi.xp and fi.levelXP - fi.xp <= xpR or false
+			local upTex = willLevelUp and " |A:bags-greenarrow:0:0|a" or ""
+			GameTooltip:AddLine("|cffa0a0a0[" .. fi.level .. "]|r " .. fi.name .. upTex, 1,1,1)
+			g[i] = fi.followerID
+		end
+		GameTooltip:AddLine(L"Tentatively assign these rookies to this adventure.", 0.2,1,0.2, 1)
 	end
 	self.group = g
 	GameTooltip:Show()
@@ -628,12 +690,157 @@ local function DoomRun_OnClick(self)
 	if GameTooltip:IsOwned(self) then
 		GameTooltip:Hide()
 	end
-	for i=1,#g do
-		C_Garrison.AddFollowerToMission(mid, g[i], i-1)
-	end
-	C_Garrison.StartMission(mid)
-	PlaySound(44323)
+	U.StoreMissionGroup(mid, g)
+	PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
 	EV("I_MISSION_LIST_UPDATE")
+end
+local function TentativeGroupClear_OnClick(self)
+	local mid = self:GetParent().missionID
+	U.StoreMissionGroup(mid, nil)
+	PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+end
+local function UButton_Sync(self)
+	local ism = U.IsStartingMissions()
+	local icm = U.IsCompletingMissions()
+	self:Show()
+	if ism then
+		self:SetFormattedText(L"%d |4party:parties; remaining...", ism)
+		self.mode = "stop-send"
+	elseif icm then
+		self:SetFormattedText(L"%d |4adventure:adventures; remaining...", icm)
+		self.mode = "stop-complete"
+	elseif self:GetParent().hasCompletedMissions then
+		self:SetText(L"Complete All")
+		self.mode = "start-complete"
+	elseif U.HaveTentativeGroups() then
+		self:SetText(L"Send Tentative Parties")
+		local tco = 0
+		for mid, nt in U.EnumerateTentativeGroups() do
+			tco = tco + nt + (C_Garrison.GetMissionCost(mid) or 0)
+		end
+		local anima = C_CurrencyInfo.GetCurrencyInfo(1813)
+		self.mode = anima and anima.quantity and anima.quantity >= tco and "start-send" or "start-cost"
+	else
+		self.mode = nil
+		self:Hide()
+	end
+	if GameTooltip:IsOwned(self) then
+		local oe = self:GetScript("OnEnter")
+		if not self:IsVisible() then
+			GameTooltip:Hide()
+		elseif oe then
+			oe(self)
+		end
+	end
+end
+local function UButton_OnEnter(self)
+	local m = self.mode
+	if m == "start-send" or m == "stop-send" or m == "start-cost" then
+		GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+		GameTooltip:AddLine(L"Send Tentative Parties")
+		local cb = C_CurrencyInfo.GetBasicCurrencyInfo(1813)
+		local curIco = cb and cb.icon and " |T" .. cb.icon .. ":0|t" or ""
+		for mid, nt in U.EnumerateTentativeGroups() do
+			local co = C_Garrison.GetMissionCost(mid) or 0
+			GameTooltip:AddDoubleLine(C_Garrison.GetMissionName(mid), (co+nt) .. curIco, 1,1,1, 1,1,1)
+		end
+		if m == "start-cost" then
+			GameTooltip:AddLine(L"Insufficient anima", 1, 0.5, 0)
+		else
+			GameTooltip:AddLine("|TInterface/TUTORIALFRAME/UI-TUTORIAL-FRAME:14:12:0:-1:512:512:10:70:330:410|t " .. L"Clear all tentative parties", 0.5, 0.8, 1)
+		end
+		GameTooltip:Show()
+	end
+end
+local function UButton_OnClick(self, button)
+	local m = self.mode
+	if U.IsStartingMissions() and m == "stop-send" then
+		U.StopStartingMissions()
+	elseif U.IsCompletingMissions() and m == "stop-complete" then
+		U.StopCompletingMissions()
+	elseif m == "start-complete" then
+		U.StartCompletingMissions()
+	elseif U.HaveTentativeGroups() and m == "start-send" then
+		if button == "RightButton" then
+			U.DisbandTentativeGroups()
+		else
+			U.SendTentativeGroups()
+		end
+	end
+	PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+	UButton_Sync(self)
+end
+local function Toast_Animate(self, elapsed)
+	local now, as, ap, d = GetTime(), self.animStart, self.animPhase
+	if as and elapsed > 0.04 then
+		as = as + elapsed - 0.04
+		self.animStart = as
+	end
+	if ap == nil then
+		self.animPhase, self.animStart = 1, nil
+		self:SetAlpha(0)
+		return
+	elseif as == nil then
+		self.animStart, as = now, now
+		self:SetAlpha(1)
+	end
+	d = now-as
+	if d < 0.5 then
+		self.PreGlow:SetAlpha(d < 0.25 and (d < 0.125 and d*8 or 2-d*8)*0.75 or 0)
+		self.Background:SetAlpha(d < 0.15 and sin(20+70*d/0.15) or 1)
+		self.Sheen:SetAlpha(sin(360*d))
+		self.Sheen:SetPoint("LEFT", 480*d, -1)
+	elseif d >= 4 then
+		self:Hide()
+	elseif self:IsMouseOver() then
+		self.animStart = now-2
+		if ap ~= 2 then
+			self.animPhase = 2
+			self.PreGlow:SetAlpha(0)
+			self.Background:SetAlpha(1)
+			self.Sheen:SetAlpha(0)
+			self:SetAlpha(1)
+		end
+	elseif d >= 3 then
+		self:SetAlpha(cos(90*(d-3)))
+		self.animPhase = 3
+	elseif ap ~= 2 then
+		self.animPhase = 2
+		self.PreGlow:SetAlpha(0)
+		self.Background:SetAlpha(1)
+		self.Sheen:SetAlpha(0)
+	end
+end
+local function Toast_OnClick(self, button)
+	if button == "RightButton" then
+		self.animPhase, self.animStart = nil
+		self:Hide()
+	end
+end
+local function MissionPage_AcquireToast(self)
+	local toasts, toast = self.Toasts
+	for i=1,#toasts do
+		toast = toasts[i]
+		if not toast:IsShown() then
+			break
+		end
+		toast = nil
+	end
+	if not toast then
+		toast = CreateObject("MissionToast", toasts[1]:GetParent())
+		toast:SetPoint("TOP", toasts[#toasts], "BOTTOM", 0, -5)
+		toasts[#toasts+1] = toast
+	end
+	toast.Icon:SetTexCoord(4/64, 60/64, 4/64, 60/64)
+	toast.animStart, toast.animPhase = nil
+	toast:Show()
+	return toast
+end
+local function ClickWithSpace(self, button)
+	self:SetPropagateKeyboardInput(button ~= "SPACE")
+	if button == "SPACE" then
+		self:Click()
+	end
 end
 
 do -- Factory.ObjectGroup
@@ -829,6 +1036,21 @@ function Factory.MissionPage(parent)
 		logsButton:SetPoint("RIGHT", prButton, "LEFT", -35, 0)
 		CreateObject("ControlContainerBorder", logsButton, 15, 9)
 	end
+	local uButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate") do
+		f.UnButton = uButton
+		uButton:SetWidth(200)
+		uButton:SetPoint("TOPLEFT", 200, -34)
+		uButton:Hide()
+		uButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+		uButton:SetScript("OnEnter", UButton_OnEnter)
+		uButton:SetScript("OnClick", UButton_OnClick)
+		uButton:SetScript("OnLeave", HideOwnGameTooltip)
+		uButton:SetScript("OnKeyDown", ClickWithSpace)
+		uButton.Sync = UButton_Sync
+	end
+	f.Toasts = {CreateObject("MissionToast", f)}
+	f.Toasts[1]:SetPoint("TOPLEFT", 20, -62)
+	f.AcquireToast = MissionPage_AcquireToast
 	
 	return f, f.MissionList
 end
@@ -836,7 +1058,6 @@ function Factory.MissionList(parent)
 	local coven = C_Covenants.GetCovenantData(C_Covenants.GetActiveCovenantID() or 1)
 	CovenKit = coven and coven.textureKit or "NightFae"
 	
-	local mf = parent
 	local missionList = CreateFrame("ScrollFrame", nil, parent)
 	missionList:SetSize(892, 524)
 	missionList:SetPoint("TOP", 0, -72)
@@ -844,10 +1065,10 @@ function Factory.MissionList(parent)
 	missionList.ScrollToward = MissionList_ScrollToward
 	CreateObject("RaisedBorder", missionList)
 	do -- missionList:OnMouseWheel
-		local v = CreateFrame("Frame", nil, mf)
+		local v = CreateFrame("Frame", nil, parent)
 		v:SetAllPoints(missionList)
 		v:EnableMouse(true)
-		v:SetFrameLevel(mf:GetFrameLevel()+20)
+		v:SetFrameLevel(parent:GetFrameLevel()+20)
 		v:Hide()
 		missionList.ScrollVeil = v
 		local function scrollFinish(self)
@@ -907,7 +1128,7 @@ function Factory.MissionList(parent)
 		missionList.Missions[i] = cf
 		cf:SetPoint("TOPLEFT", 292*(((i-1)%3)+1)-284, math.floor((i-1)/3) *- 195)
 	end
-	
+
 	return missionList
 end
 function Factory.MissionButton(parent)
@@ -972,19 +1193,19 @@ function Factory.MissionButton(parent)
 	a:SetPoint("LEFT", t, "LEFT", -6, 0)
 	b = t:CreateFontString(nil, "OVERLAY", "GameFontBlack")
 	b:SetPoint("LEFT", a, "RIGHT", -2, 0)
-	b:SetText("244,242")
+	b:SetText("2,424")
 	a, cf.enemyHP = cf:CreateTexture(nil, "BACKGROUND", nil, 2), b
 	a:SetAtlas("ui_adv_atk", true)
 	a:SetPoint("LEFT", b, "RIGHT", 0, 0)
 	b = t:CreateFontString(nil, "OVERLAY", "GameFontBlack")
 	b:SetPoint("LEFT", a, "RIGHT", -2, 0)
-	b:SetText("244,242")
+	b:SetText("2,424")
 	a, cf.enemyATK = cf:CreateTexture(nil, "BACKGROUND", nil, 2), b
 	a:SetAtlas("animachannel-bar-" .. CovenKit .. "-gem", true)
 	a:SetPoint("LEFT", b, "RIGHT", 8, 0)
 	b = t:CreateFontString(nil, "OVERLAY", "GameFontBlack")
 	b:SetPoint("LEFT", a, "RIGHT", -2, 0)
-	b:SetText("244,242")
+	b:SetText("42")
 	a, cf.animaCost = cf:CreateTexture(nil, "BACKGROUND", nil, 2), b
 	a:SetTexture("Interface/Common/Mini-hourglass")
 	a:SetSize(14, 14)
@@ -1002,34 +1223,26 @@ function Factory.MissionButton(parent)
 	cf.ProgressBar = t
 	local gb = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate")
 	gb:SetPoint("BOTTOM", 20, 12)
-	gb:SetText(L"Select adventurers")
+	gb:SetText("Buttons!")
 	gb:SetSize(165, 21)
 	gb:SetScript("OnClick", function(self)
-		local mf = self:GetParent()
-		local c = C_Garrison.GetAvailableMissions(123)
-		for i=1,#c do
-			if c[i].missionID == mf.missionID then
-				local mi = c[i]
-				mi.missionID = mf.missionID
-				mi.encounterIconInfo = C_Garrison.GetMissionEncounterIconInfo(mf.missionID)
-				PlaySound(SOUNDKIT.UI_GARRISON_COMMAND_TABLE_SELECT_MISSION)
-				CovenantMissionFrame:GetMissionPage():Show()
-				CovenantMissionFrame:ShowMission(mi)
-				CovenantMissionFrame.FollowerList:OnShow()
-				self:GetParent():GetParent():GetParent():GetParent():Hide()
-				break
-			end
-		end
+		U.ShowMission(self:GetParent().missionID, self:GetParent():GetParent():GetParent():GetParent())
 	end)
 	cf.ViewButton = gb
 	t = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate")
 	t:SetPoint("RIGHT", cf.ViewButton, "LEFT", -8)
 	t:SetSize(24,21)
 	t:SetText("|TInterface/EncounterJournal/UI-EJ-HeroicTextIcon:0|t")
+	t:SetPushedTextOffset(-1, -1)
 	t:SetScript("OnEnter", DoomRun_OnEnter)
 	t:SetScript("OnLeave", HideOwnGameTooltip)
-	t:SetScript("OnDoubleClick", DoomRun_OnClick)
-	cf.DoomRunButton = t
+	t:SetScript("OnClick", DoomRun_OnClick)
+	t, cf.DoomRunButton = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate"), t
+	t:SetAllPoints(cf.DoomRunButton)
+	t:SetText("|TInterface/Buttons/UI-StopButton:0|t")
+	t:SetScript("OnClick", TentativeGroupClear_OnClick)
+	t:SetPushedTextOffset(-1, -1)
+	cf.TentativeClear = t
 	t = cf:CreateFontString(nil, "BACKGROUND", "GameFontNormalSmall")
 	t:SetTextColor(0.97, 0.94, 0.70)
 	t:SetPoint("TOPLEFT", 16, -38)
@@ -1314,7 +1527,7 @@ function Factory.FollowerListButton(parent, isTroop)
 	local f2 = CreateFrame("Frame", nil, f)
 	local ett = {}
 	f2:SetAllPoints()
-	f:RegisterForClicks("RightButtonUp")
+	f:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	f:RegisterForDrag("LeftButton")
 	f:SetMotionScriptsWhileDisabled(true)
 	f:SetHitRectInsets(-3,4,0,5)
@@ -1399,8 +1612,8 @@ function Factory.FollowerListButton(parent, isTroop)
 		t:SetAtlas("adventures-buff-heal-ring")
 		local divC = CovenKit == "Kyrian" and 0x78c7ff or CovenKit == "Venthyr" and 0xcf1500 or CovenKit == "Necrolord" and 0x76c900 or 0x0058e6
 		t:SetVertexColor(divC / 2^24, divC/256 % 256 / 255, divC%256/255)
-		t:SetPoint("TOPLEFT", f.PortraitR, "TOPLEFT", -7, 7)
-		t:SetPoint("BOTTOMRIGHT", f.PortraitR, "BOTTOMRIGHT", 7, -7)
+		t:SetPoint("TOPLEFT", f.PortraitR, "TOPLEFT", -6, 6)
+		t:SetPoint("BOTTOMRIGHT", f.PortraitR, "BOTTOMRIGHT", 6, -6)
 		f.EC = t
 	end
 	f.ExtraTex = CreateObject("ObjectGroup", ett)
@@ -1472,5 +1685,99 @@ function Factory.InfoButton(parent)
 	f:GetHighlightTexture():SetTexCoord(0.2, 0.8, 0.2, 0.8)
 	f:GetHighlightTexture():SetBlendMode("ADD")
 	f:GetHighlightTexture():SetAlpha(0.25)
+	return f
+end
+function Factory.TexSlice(parent, layer,subLevel, tex,tW,tH, x0,x1,x2,x3, y0,y1,y2,y3, xS,yS, oT,oR,oB,oL)
+	local r, ni, t = CreateObject("ObjectGroup"), 1
+	for i=1,yS == 0 and 3 or 9 do
+		r[i] = parent:CreateTexture(nil, layer, nil, subLevel)
+	end
+	r:SetTexture(tex)
+
+	x0,x1,x2,x3=x0/tW,x1/tW,x2/tW,x3/tW
+	y0,y1,y2,y3=y0/tH,y1/tH,y2/tH,y3/tH
+	if yS > 0 then
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x0, x1, y0, y1)
+		t:SetPoint("TOPLEFT", -oL, oT)
+		t:SetSize(xS, yS)
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x1, x2, y0, y1)
+		t:SetPoint("TOPLEFT", xS-oL, oT)
+		t:SetPoint("BOTTOMRIGHT", parent, "TOPRIGHT", oR-xS, oT-yS)
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x2, x3, y0, y1)
+		t:SetPoint("TOPRIGHT", oR, oT)
+		t:SetSize(xS, yS)
+	end
+	t, ni = r[ni], ni + 1
+	t:SetTexCoord(x0, x1, y1, y2)
+	t:SetPoint("TOPLEFT", -oL, oT-yS)
+	t:SetPoint("BOTTOMRIGHT", parent, "BOTTOMLEFT", xS-oL, yS-oB)
+	t, ni = r[ni], ni + 1
+	t:SetTexCoord(x1, x2, y1, y2)
+	t:SetPoint("TOPLEFT", xS-oL, oT-yS)
+	t:SetPoint("BOTTOMRIGHT", -xS+oR, yS-oB)
+	t, ni = r[ni], ni + 1
+	t:SetTexCoord(x2, x3, y1, y2)
+	t:SetPoint("TOPLEFT", parent, "TOPRIGHT", oR-xS, oT-yS)
+	t:SetPoint("BOTTOMRIGHT", oR, yS-oB)
+	if yS > 0 then
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x0, x1, y2, y3)
+		t:SetPoint("BOTTOMLEFT", -oL, -oB)
+		t:SetSize(xS, yS)
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x1, x2, y2, y3)
+		t:SetPoint("BOTTOMLEFT", -oL+xS, -oB)
+		t:SetPoint("TOPRIGHT", parent, "BOTTOMRIGHT", oR-xS, yS-oB)
+		t, ni = r[ni], ni + 1
+		t:SetTexCoord(x2, x3, y2, y3)
+		t:SetPoint("BOTTOMRIGHT", oR, -oB)
+		t:SetSize(xS, yS)
+	end
+	
+	return r
+end
+function Factory.MissionToast(parent)
+	local f, t = CreateFrame("Button", nil, parent)
+	f:SetSize(295, 40)
+	f:SetFrameStrata("FULLSCREEN")
+	f:SetHitRectInsets(-6, -6, -6, -6)
+	f:RegisterForClicks("RightButtonUp")
+	f:SetScript("OnUpdate", Toast_Animate)
+	f:SetScript("OnClick", Toast_OnClick)
+	f.Background = CreateObject("TexSlice", f, "BACKGROUND", 0, "Interface/LootFrame/LootToast",1024,256, 578,638,763,823, 0,3,69,0, 45,0, 5,0,5,0)
+	t = f:CreateTexture(nil, "ARTWORK")
+	t:SetAtlas("loottoast-sheen")
+	t:SetBlendMode("ADD")
+	t:SetSize(90, 38) -- 171,75
+	t:SetPoint("LEFT", 20, -1)
+	t, f.Sheen = f:CreateTexture(nil, "OVERLAY", nil, -2), t
+	t:SetTexture("Interface/AchievementFrame/UI-Achievement-Alert-Glow")
+	t:SetTexCoord(5/512, 395/512, 5/256, 167/256)
+	t:SetPoint("BOTTOMLEFT", -35, -30)
+	t:SetPoint("TOPRIGHT", 35, 30)
+	t:SetBlendMode("ADD")
+	f.PreGlow = t
+	t = f:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+	t:SetPoint("TOPLEFT", 44, -7)
+	t:SetSize(240, 12)
+	t:SetText("|cffff8000Legendary Mission")
+	t, f.Outcome = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight"), t
+	t:SetPoint("BOTTOMLEFT", 44, 7)
+	t:SetSize(240, 12)
+	t:SetText("Legendary Goat Rescue")
+	t, f.Detail = f:CreateTexture(nil, "ARTWORK"), t
+	t:SetSize(28, 28)
+	t:SetPoint("LEFT", 11, -1)
+	t:SetTexture(877477)
+	t:SetTexCoord(4/64, 60/64, 4/64,60/64)
+	t, f.Background[#f.Background+1], f.Icon = f:CreateTexture(nil, "ARTWORK", nil, 1), t, t
+	t:SetSize(34, 34)
+	t:SetPoint("CENTER", f.Icon, "CENTER")
+	t:SetAtlas("loottoast-itemborder-gold")
+	f.Background[#f.Background+1], f.IconBorder = t, t
+	f:Hide()
 	return f
 end
