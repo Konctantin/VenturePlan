@@ -30,7 +30,7 @@ local function GetTimeStringFromSeconds(sec, shorter, roundUp, disallowSeconds)
 	local h = roundUp and math.ceil or math.floor
 	if sec < 90 and not disallowSeconds then
 		return (shorter and COOLDOWN_DURATION_SEC or INT_GENERAL_DURATION_SEC):format(sec < 0 and 0 or h(sec))
-	elseif (sec < 3600*(shorter and 3 or 1) and (sec % 3600 >= 1)) then
+	elseif (sec < 3600*(shorter and shorter ~= 2 and 3 or 1) and (sec % 3600 >= 1 or sec < 3600)) then
 		return (shorter and COOLDOWN_DURATION_MIN or INT_GENERAL_DURATION_MIN):format(h(sec/60))
 	elseif sec <= 3600*72 and not shorter then
 		sec = h(sec/60)*60
@@ -253,12 +253,6 @@ local function CurrencyMeter_Activate(self, tip, currencyID, q1)
 				cur, max, label = bVal - bMin, bMax-bMin, _G["FACTION_STANDING_LABEL" .. stID .. (UnitSex("player") ~= 2 and "_FEMALE" or "")]
 			end
 		end
-	elseif currencyID == 1553 and not C_AzeriteItem.IsAzeriteItemAtMaxLevel() then
-		local aloc = C_AzeriteItem.FindActiveAzeriteItem()
-		local ok, level = pcall(C_AzeriteItem.GetPowerLevel, aloc)
-		if ok and level then
-			label, cur, max = HEART_OF_AZEROTH_LEVEL:format(level), C_AzeriteItem.GetAzeriteItemXPInfo(aloc)
-		end
 	end
 	if not (cur and max) then
 		return
@@ -379,7 +373,7 @@ local RewardButton_SetReward do
 			end
 		elseif rew.itemID then
 			q = rew.quantity == 1 and "" or rew.quantity or ""
-			local _,_,r = GetItemInfo(rew.itemLink or rew.itemID)
+			local r = select(3,GetItemInfo(rew.itemLink or rew.itemID)) or select(3,GetItemInfo(rew.itemID))
 			self.RarityBorder:SetAtlas(
 				((r or 2) <= 2) and "loottoast-itemborder-green"
 				or r == 3 and "loottoast-itemborder-blue"
@@ -407,6 +401,248 @@ local function RewardBlock_SetRewards(self, xp, rw)
 	elseif self.Label then
 		self[1]:GetParent():SetWidth(self.Label:GetStringWidth()+16+32*(1+(rw and #rw or 0)))
 	end
+end
+local function nop()
+end
+local function FollowerButton_OnDragStart(self)
+	if self:IsEnabled() then
+		local fa = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+		local fid = self.info.followerID
+		if not self.info.isAutoTroop then
+			for i=0,4 do
+				local f = fa[i]
+				if f:IsShown() and f:GetFollowerGUID() == fid then
+					return
+				end
+			end
+		end
+		CovenantMissionFrame:OnDragStartFollowerButton(CovenantMissionFrame:GetPlacerFrame(), self, 24);
+	end
+end
+local function FollowerButton_OnDragStop(self)
+	if self:IsEnabled() then
+		CovenantMissionFrame:OnDragStopFollowerButton(CovenantMissionFrame:GetPlacerFrame());
+	end
+end
+local function FollowerButton_OnClick(self, b)
+	if b == "RightButton" then
+		local fa = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+		local fid = self.info.followerID
+		for i=0,self.info.isAutoTroop and -1 or 4 do
+			if fa[i]:GetFollowerGUID() == fid then
+				CovenantMissionFrame:RemoveFollowerFromMission(fa[i], true)
+				return
+			end
+		end
+		CovenantMissionFrame.MissionTab.MissionPage:AddFollower(self.info.followerID)
+	end
+	self:GetParent():SyncToBoard()
+end
+local function FollowerButton_OnEnter(self)
+	local info = self.info
+	if not info then return end
+	GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+	GameTooltip:ClearLines()
+	GameTooltip:AddDoubleLine(info.name, "|cffa8a8a8" .. UNIT_LEVEL_TEMPLATE:format(info.level))
+	local fi, acs = info, info.autoCombatantStats
+	local s1 = info.autoCombatSpells and info.autoCombatSpells[1]
+	local aat = T.VSim.TP:GetAutoAttack(info.role, 0, nil, s1 and s1.autoCombatSpellID)
+	local atype = aat == 11 and " (melee)" or aat == 15 and " (ranged)" or ""
+	local hp, mhp, atk = acs and acs.currentHealth, acs and acs.maxHealth, acs and acs.attack
+	GameTooltip:AddLine("|A:ui_adv_health:20:20|a" .. (hp and BreakUpLargeNumbers(hp) or "???") .. (mhp and mhp ~= hp and ("|cffa0a0a0/|r" .. BreakUpLargeNumbers(mhp)) or "").. "  |A:ui_adv_atk:20:20|a" .. (atk and BreakUpLargeNumbers(atk) or "???") .. "|cffa8a8a8" .. atype, 1,1,1)
+	if fi and fi.isMaxLevel == false and fi.xp and fi.levelXP and fi.level and not fi.isAutoTroop then
+		GameTooltip:AddLine(GARRISON_FOLLOWER_TOOLTIP_XP:format(fi.levelXP-fi.xp), 0.7, 0.7, 0.7)
+	end
+	
+	for i=1,#info.autoCombatSpells do
+		local s = info.autoCombatSpells[i]
+		GameTooltip:AddLine(" ")
+		local si = T.KnownSpells[s.autoCombatSpellID]
+		local pfx = si and "" or "|TInterface/EncounterJournal/UI-EJ-WarningTextIcon:0|t "
+		local cdt = s.cooldown ~= 0 and "[CD: " .. s.cooldown .. "T]" or SPELL_PASSIVE_EFFECT
+		GameTooltip:AddDoubleLine(pfx .. "|T" .. s.icon .. ":0:0:0:0:64:64:4:60:4:60|t " .. s.name, "|cffa8a8a8" .. cdt .. "|r")
+		local dc, guideLine = 0.95
+		if si and si.type == "nop" then
+			dc, guideLine = 0.60, "It does nothing."
+		end
+		if si and si.desc then
+			dc, guideLine = 0.60, si.desc .. (guideLine and "|n" .. guideLine or "")
+		end
+		GameTooltip:AddLine(s.description, dc, dc, dc, 1)
+		if guideLine then
+			GameTooltip:AddLine(guideLine, 0.45, 1, 0, 1)
+		end
+	end
+	
+	if info.status == GARRISON_FOLLOWER_ON_MISSION and info.missionTimeEnd then
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine(GARRISON_FOLLOWER_ON_MISSION_WITH_DURATION:format(GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), false, true, true)), 1, 0.4, 0)
+	end
+	GameTooltip:Show()
+end
+local function FollowerButton_GetInfo(self)
+	return self.info
+end
+local function FollowerButton_GetFollowerGUID(self)
+	return self.info.followerID
+end
+local function FollowerButton_SetInfo(self, info)
+	local onMission = info.status == GARRISON_FOLLOWER_ON_MISSION
+	if info.followerID then
+		info.autoCombatSpells = C_Garrison.GetFollowerAutoCombatSpells(info.followerID, info.level)
+		info.autoCombatantStats = info.autoCombatantStats or C_Garrison.GetFollowerAutoCombatStats(info.followerID)
+	end
+	self.info = info
+	self.Portrait:SetTexture(info.portraitIconID)
+	self.Level:SetText(info.level)
+	self.Portrait:SetDesaturated(onMission)
+	self.MissionTimeLeft:SetText(info.missionTimeEnd and GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), 2, true, true) or "")
+	self:SetEnabled(not onMission)
+	local cs = info.autoCombatantStats
+	self.Health:SetWidth(self.HealthBG:GetWidth()*math.min(1, cs and (cs.currentHealth/cs.maxHealth)+0.001 or 0.001))
+	if info.missionTimeEnd then
+		local t = GetTime()
+		local tl = info.missionTimeEnd-t
+		local te = tl > 1 and (t+tl%60+0.05)
+		if te and te < (self:GetParent().nextUpdate or 0) then
+			self:GetParent().nextUpdate = te
+		end
+	end
+end
+local function FollowerList_Compare(a,b)
+	local ac, bc = a.missionTimeEnd, b.missionTimeEnd
+	if ac ~= bc then
+		if ac and bc then
+			return ac < bc
+		else
+			return not ac
+		end
+	end
+	ac, bc = a.level, b.level
+	if ac == bc then
+		ac, bc = a.xp, b.xp
+	end
+	if ac == bc then
+		ac, bc = a.autoCombatantStats and a.autoCombatantStats.maxHealth or 0, b.autoCombatantStats and b.autoCombatantStats.maxHealth or 0
+	end
+	if ac == bc then
+		ac, bc = b.name, a.name
+	end
+	return ac > bc
+end
+local function FollowerList_SyncToBoard(self)
+	local fa = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+	for i=1,#self.companions do
+		local c = self.companions[i]
+		local isInMission = false
+		for i=0, c:IsShown() and 4 or -1 do
+			local f = fa[i]
+			if f and f.name and f:IsShown() and f.info and f.info.followerID == c.info.followerID then
+				isInMission = true
+				break
+			end
+		end
+		c:SetChecked(isInMission)
+	end
+end
+local function FollowerList_SyncXPGain(self, setXPGain)
+	local wf = self.companions
+	local xpGain = type(setXPGain) == "number" and setXPGain or self.xpGain or -1
+	self.xpGain = xpGain
+	for i=1,#wf do
+		local w = wf[i]
+		local info = wf[i].info
+		if not (w:IsShown() and info and not info.isAutoTroop and not info.isMaxLevel and info.xp and info.levelXP and (info.levelXP-info.xp) <= xpGain) then
+			local c = NORMAL_FONT_COLOR
+			w.Level:SetTextColor(c.r, c.g, c.b)
+			w.Blip:Hide()
+		else
+			w.Level:SetTextColor(0.15, 0.85, 0.15)
+			w.Blip:Show()
+		end
+	end
+end
+local function FollowerList_Refresh(self, setXPGain)
+	local wt, wf = self.troops, self.companions
+	if self.noRefresh == nil then
+		local fl = C_Garrison.GetFollowers(123)
+		local ft = C_Garrison.GetAutoTroops(123)
+		EV("I_MARK_FALSESTART_FOLLOWERS", fl)
+		for i=1,#ft do
+			FollowerButton_SetInfo(wt[i], ft[i])
+		end
+		for i=1,#fl do
+			local e = fl[i]
+			e.autoCombatantStats = C_Garrison.GetFollowerAutoCombatStats(e.followerID)
+			e.missionTimeEnd = e.missionTimeEnd or e.status == GARRISON_FOLLOWER_ON_MISSION and
+				(GetTime() + (C_Garrison.GetFollowerMissionTimeLeftSeconds(e.followerID) or 1)) or nil
+		end
+		table.sort(fl, FollowerList_Compare)
+		for i=1,#fl do
+			local fi = fl[i]
+			FollowerButton_SetInfo(wf[i], fi)
+			wf[i]:Show()
+		end
+		for i=#fl+1,#wf do
+			wf[i]:Hide()
+		end
+		self:SetHeight(130+60*math.ceil(#fl/5))
+		self.noRefresh = true
+	end
+	FollowerList_SyncToBoard(self)
+	FollowerList_SyncXPGain(self, setXPGain)
+end
+local function FollowerList_OnUpdate(self)
+	local t = GetTime()
+	self.noRefresh = nil
+	if t >= (self.nextUpdate or 0) then
+		self.nextUpdate = t+60
+		self:Refresh()
+		local mf = GetMouseFocus()
+		if mf and mf:GetParent() == self and GameTooltip:IsOwned(mf) then
+			local f = mf:GetScript("OnEnter")
+			if f then f(mf) end
+		end
+	end
+end
+local function DoomRun_OnEnter(self)
+	local p = self:GetParent()
+	local ft, g = C_Garrison.GetFollowers(123), {}
+	EV("I_MARK_FALSESTART_FOLLOWERS", ft)
+	table.sort(ft, FollowerList_Compare)
+	local getACS = C_Garrison.GetFollowerAutoCombatStats
+	for i=#ft,1,-1 do
+		local fi = ft[i]
+		if fi.isCollected and not fi.isMaxLevel and fi.status ~= GARRISON_FOLLOWER_ON_MISSION and getACS(fi.followerID).currentHealth > 0 then
+			g[#g+1] = i
+			if #g == 5 then
+				break
+			end
+		end
+	end
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText("Doomed Run")
+	GameTooltip:AddLine(("Failing this mission grants |cff00ff00%s XP|r to each companion."):format(p.Rewards[1].Quantity:GetText()), 1,1,1,1)
+	GameTooltip:AddLine(" ")
+	GameTooltip:AddLine("Double click: send these rookies to their doom:", 0.1,0.9,0.1, 1)
+	for i=1,#g do
+		local fi = ft[g[i]]
+		GameTooltip:AddLine("|cffa0a0a0[" .. fi.level .. "]|r " .. fi.name, 1,1,1)
+		g[i] = fi.followerID
+	end
+	self.group = g
+	GameTooltip:Show()
+end
+local function DoomRun_OnClick(self)
+	local mid = self:GetParent().missionID
+	local g = self.group
+	if not (mid and g and #g > 0) then return end
+	for i=1,#g do
+		C_Garrison.AddFollowerToMission(mid, g[i], i-1)
+	end
+	C_Garrison.StartMission(mid)
+	PlaySound(44323)
+	EV("I_MISSION_LIST_UPDATE")
 end
 
 do -- Factory.ObjectGroup
@@ -774,7 +1010,7 @@ function Factory.MissionButton(parent)
 	t.Fill:SetAtlas("UI-Frame-Bar-Fill-Blue")
 	cf.ProgressBar = t
 	local gb = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate")
-	gb:SetPoint("BOTTOM", 0, 12)
+	gb:SetPoint("BOTTOM", 20, 12)
 	gb:SetText("Select adventurers")
 	gb:SetSize(160, 21)
 	gb:SetScript("OnClick", function(self)
@@ -795,6 +1031,14 @@ function Factory.MissionButton(parent)
 		end
 	end)
 	cf.ViewButton = gb
+	t = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate")
+	t:SetPoint("RIGHT", cf.ViewButton, "LEFT", -8)
+	t:SetSize(24,21)
+	t:SetText("|TInterface/EncounterJournal/UI-EJ-HeroicTextIcon:0|t")
+	t:SetScript("OnEnter", DoomRun_OnEnter)
+	t:SetScript("OnLeave", HideOwnGameTooltip)
+	t:SetScript("OnDoubleClick", DoomRun_OnClick)
+	cf.DoomRunButton = t
 	t = cf:CreateFontString(nil, "BACKGROUND", "GameFontNormalSmall")
 	t:SetTextColor(0.97, 0.94, 0.70)
 	t:SetPoint("TOPLEFT", 16, -38)
@@ -1076,5 +1320,105 @@ function Factory.LogBookButton(parent)
 	t:SetPoint("LEFT", 25, 0)
 	t:SetText("Lots")
 	f.SetText, f.Text = ResizedButton_SetText, t
+	return f
+end
+function Factory.FollowerListButton(parent, isTroop)
+	local co = CovenKit:lower()
+	local f,t = CreateFrame("CheckButton", nil, parent)
+	local f2 = CreateFrame("Frame", nil, f)
+	f2:SetAllPoints()
+	f:RegisterForClicks("RightButtonUp")
+	f:RegisterForDrag("LeftButton")
+	f:SetMotionScriptsWhileDisabled(true)
+	f:SetHitRectInsets(6,6,10,6)
+	f:SetScript("OnDragStart", FollowerButton_OnDragStart)
+	f:SetScript("OnDragStop", FollowerButton_OnDragStop)
+	f:SetScript("OnClick", FollowerButton_OnClick)
+	f:SetScript("OnEnter", FollowerButton_OnEnter)
+	f:SetScript("OnLeave", HideOwnGameTooltip)
+	f:SetSize(55, 65)
+	f:SetNormalAtlas("covenantsanctum-renown-icon-border-" .. co)
+	f:SetDisabledAtlas("covenantsanctum-renown-icon-border-disabled")
+	f:SetHighlightAtlas("covenantsanctum-renown-icon-hover")
+	f:GetHighlightTexture():SetAlpha(0.8)
+	t = f:CreateTexture(nil, "BACKGROUND", nil, -1)
+	t:SetColorTexture(0,0,0)
+	t:SetPoint("CENTER")
+	t:SetSize(40,40)
+	if not isTroop then
+		f:SetCheckedTexture("Interface/Icons/Temp")
+		t = f:GetCheckedTexture()
+		t:SetAtlas("covenantsanctum-renown-next-border-" .. co)
+	end
+	t = f:CreateTexture(nil, "BACKGROUND")
+	t:SetSize(38,38)
+	t:SetPoint("CENTER", 0, 2)
+	t:SetTexture(1605024)
+	t, f.Portrait = f2:CreateFontString(nil, "OVERLAY", "GameFontNormal"), t
+	t:SetPoint("BOTTOM", 0, 4)
+	t:SetText(64)
+	t, f.Level = f2:CreateFontString(nil, "OVERLAY", "NumberFontNormal"), t
+	t:SetPoint("CENTER", 0, 0)
+	t, f.MissionTimeLeft = f:CreateTexture(nil, "BACKGROUND", nil, 1), t
+	t:SetColorTexture(1,1,1)
+	t:SetGradient("VERTICAL", 0.15,0.15,0.15, 0.2,0.2, 0.2)
+	t:SetAlpha(0.25)
+	t:SetSize(40, 7)
+	t:SetPoint("BOTTOM", 0, 14)
+	t, f.HealthBG = f:CreateTexture(nil, "BACKGROUND", nil, 2), t
+	t:SetColorTexture(1,1,1)
+	t:SetGradient("VERTICAL", 0.05,0.95, 0.05, 0.15,0.5,0.15)
+	t:SetAlpha(0.75)
+	t:SetSize(24, 7)
+	t:SetPoint("BOTTOMLEFT", f.HealthBG, "BOTTOMLEFT")
+	t, f.Health = f2:CreateTexture(nil, "ARTWORK"), t
+	t:SetSize(8,8)
+	t:SetPoint("CENTER", 13, 15)
+	t:SetTexture("Interface/Minimap/PartyRaidBlipsV2")
+	t:SetTexCoord(0, 20/64, 0, 20/32)
+	t:SetVertexColor(0.1, 0.85, 0.1)
+	t:Hide()
+	f.Blip = t
+	f.GetInfo = FollowerButton_GetInfo
+	f.GetFollowerGUID = FollowerButton_GetFollowerGUID
+	f.SetEmpty = nop
+	return f
+end
+function Factory.FollowerList(parent)
+	local f,t = CreateFrame("Frame", nil, parent)
+	f:SetSize(300, 370)
+	t = f:CreateTexture(nil, "BACKGROUND")
+	t:SetAllPoints()
+	t:SetAtlas("adventures-followers-bg")
+	t = f:CreateTexture(nil, "BORDER")
+	t:SetAllPoints()
+	t:SetAtlas("adventures-followers-frame")
+	
+	t = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	t:SetText(FOLLOWERLIST_LABEL_TROOPS)
+	t:SetPoint("TOPLEFT", 12, -14)
+	f.troops = {}
+	for i=1,2 do
+		f.troops[i] = CreateObject("FollowerListButton", f, true)
+		f.troops[i]:SetPoint("TOPLEFT", (i-1)*56+8, -25)
+	end
+
+	t = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+	t:SetText(COVENANT_MISSION_FOLLOWER_CATEGORY)
+	t:SetPoint("TOPLEFT", 12, -100)
+	f.companions = {}
+	for i=1,20 do
+		t = CreateObject("FollowerListButton", f, false)
+		t:SetPoint("TOPLEFT", ((i-1)%5)*56+8, -math.floor((i-1)/5)*60-110)
+		f.companions[i] = t
+	end
+	f:SetPoint("LEFT", UIParent, "LEFT", 20, 0)
+	
+	f.Refresh = FollowerList_Refresh
+	f.SyncToBoard = FollowerList_SyncToBoard
+	f.SyncXPGain = FollowerList_SyncXPGain
+	f:SetScript("OnUpdate", FollowerList_OnUpdate)
+	f:SetScript("OnShow", FollowerList_Refresh)
+	f:Hide()
 	return f
 end
