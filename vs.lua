@@ -570,9 +570,8 @@ function mu:spell(source, sid, eid, ord)
 		local pdda, pdta, thornsa = si.plusDamageDealtATK, si.plusDamageTakenATK, si.thornsATK
 		local hasDamage, hasHeal = si.damageATK or si.damagePerc, si.healATK or si.healPerc
 		local modHPP, modHPA = si.modMaxHP, si.modMaxHPATK
-		local pdd, pdt = pdda and (pdda*su.atk/100), pdta and (pdta*su.atk/100)
+		local pdd, pdt = pdda and (pdda*su.atk/100) or si.plusDamageDealtA, pdta and (pdta*su.atk/100) or si.plusDamageTakenA
 		local nore = si.nore
-		if sid == 91 then pdd = -0.6 end
 		for ti=1,#tt do
 			local i = tt[ti]
 			local tu = board[i]

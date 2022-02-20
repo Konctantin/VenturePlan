@@ -252,7 +252,7 @@ local function UpdateMissions()
 		Missions[i]:Hide()
 	end
 end
-local function CheckRewardCache(iid)
+local function CheckRewardCache()
 	if MissionList.clearedRewardSync == true or not MissionList:IsVisible() then
 		return
 	end

@@ -404,6 +404,15 @@ local function RewardBlock_SetRewards(self, xp, rw)
 end
 local function nop()
 end
+local function FollowerButton_SyncButtonState(self)
+	local s = self:IsEnabled() and (self:GetChecked() and "CHECKED" or "NORMAL") or "DISABLED"
+	local dc = s == "DISABLED" and 0.65 or 1
+	self.ExtraTex:SetDesaturated(s == "DISABLED")
+	self.PortraitR:SetVertexColor(dc, dc, dc)
+	if self.EC then
+		self.EC:SetShown(s == "CHECKED")
+	end
+end
 local function FollowerButton_OnDragStart(self)
 	if self:IsEnabled() then
 		local fa = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
@@ -434,7 +443,7 @@ local function FollowerButton_OnClick(self, b)
 				return
 			end
 		end
-		CovenantMissionFrame.MissionTab.MissionPage:AddFollower(self.info.followerID)
+		CovenantMissionFrame.MissionTab.MissionPage:AddFollower(fid)
 	end
 	self:GetParent():SyncToBoard()
 end
@@ -480,6 +489,9 @@ local function FollowerButton_OnEnter(self)
 	end
 	GameTooltip:Show()
 end
+local function FollowerButton_OnLeave(self)
+	return HideOwnGameTooltip(self)
+end
 local function FollowerButton_GetInfo(self)
 	return self.info
 end
@@ -492,12 +504,20 @@ local function FollowerButton_SetInfo(self, info)
 		info.autoCombatSpells = C_Garrison.GetFollowerAutoCombatSpells(info.followerID, info.level)
 		info.autoCombatantStats = info.autoCombatantStats or C_Garrison.GetFollowerAutoCombatStats(info.followerID)
 	end
+	local vc = onMission and 0.25 or 1
+	local mc = onMission and DISABLED_FONT_COLOR or NORMAL_FONT_COLOR
+	local mtl = info.missionTimeEnd and GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), 2, true, true) or ""
 	self.info = info
 	self.Portrait:SetTexture(info.portraitIconID)
-	self.Level:SetText(info.level)
-	self.Portrait:SetDesaturated(onMission)
-	self.MissionTimeLeft:SetText(info.missionTimeEnd and GetTimeStringFromSeconds(math.max(0, info.missionTimeEnd-GetTime()), 2, true, true) or "")
+	self.Portrait2:SetTexture(info.portraitIconID)
+	self.TextLabel:SetText(onMission and mtl or info.level)
+	self.TextLabel:SetTextColor(mc.r, mc.g, mc.b)
+	self.Portrait:SetVertexColor(vc, vc, vc)
+	self.Portrait2:SetShown(onMission)
+	local ir = info.role
+	self.Role:SetAtlas(ir == 1 and "adventures-dps" or ir == 4 and "adventures-healer" or ir == 5 and "adventures-tank" or "adventures-dps-ranged")
 	self:SetEnabled(not onMission)
+	self.Health:SetShown(not onMission)
 	local cs = info.autoCombatantStats
 	self.Health:SetWidth(self.HealthBG:GetWidth()*math.min(1, cs and (cs.currentHealth/cs.maxHealth)+0.001 or 0.001))
 	if info.missionTimeEnd then
@@ -507,6 +527,17 @@ local function FollowerButton_SetInfo(self, info)
 		if te and te < (self:GetParent().nextUpdate or 0) then
 			self:GetParent().nextUpdate = te
 		end
+	end
+	local ns = info.autoCombatSpells and #info.autoCombatSpells or 0
+	for i=1,ns do
+		local s = info.autoCombatSpells[i]
+		self.Abilities[i]:SetTexture(s.icon)
+		self.Abilities[i]:Show()
+		self.AbilitiesB[i]:Show()
+	end
+	for i=ns+1, #self.Abilities do
+		self.Abilities[i]:Hide()
+		self.AbilitiesB[i]:Hide()
 	end
 end
 local function FollowerList_Compare(a,b)
@@ -543,6 +574,7 @@ local function FollowerList_SyncToBoard(self)
 			end
 		end
 		c:SetChecked(isInMission)
+		FollowerButton_SyncButtonState(c)
 	end
 end
 local function FollowerList_SyncXPGain(self, setXPGain)
@@ -552,14 +584,9 @@ local function FollowerList_SyncXPGain(self, setXPGain)
 	for i=1,#wf do
 		local w = wf[i]
 		local info = wf[i].info
-		if not (w:IsShown() and info and not info.isAutoTroop and not info.isMaxLevel and info.xp and info.levelXP and (info.levelXP-info.xp) <= xpGain) then
-			local c = NORMAL_FONT_COLOR
-			w.Level:SetTextColor(c.r, c.g, c.b)
-			w.Blip:Hide()
-		else
-			w.Level:SetTextColor(0.15, 0.85, 0.15)
-			w.Blip:Show()
-		end
+		local isAway = (info and info.status == GARRISON_FOLLOWER_ON_MISSION)
+		local willLevel = (info and not info.isAutoTroop and not info.isMaxLevel and info.xp and info.levelXP and (info.levelXP-info.xp) <= xpGain)
+		w.Blip:SetShown(willLevel and not isAway)
 	end
 end
 local function FollowerList_Refresh(self, setXPGain)
@@ -586,7 +613,7 @@ local function FollowerList_Refresh(self, setXPGain)
 		for i=#fl+1,#wf do
 			wf[i]:Hide()
 		end
-		self:SetHeight(130+60*math.ceil(#fl/5))
+		self:SetHeight(135+72*math.ceil(#fl/4))
 		self.noRefresh = true
 	end
 	FollowerList_SyncToBoard(self)
@@ -620,14 +647,17 @@ local function DoomRun_OnEnter(self)
 			end
 		end
 	end
+	local xpR = tonumber((p.Rewards[1].Quantity:GetText():gsub("%D", "")))
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	GameTooltip:SetText("Doomed Run")
-	GameTooltip:AddLine(("Failing this mission grants |cff00ff00%s XP|r to each companion."):format(p.Rewards[1].Quantity:GetText()), 1,1,1,1)
+	GameTooltip:AddLine(("Failing this mission grants |cff00ff00%s XP|r to each companion."):format(BreakUpLargeNumbers(xpR)), 1,1,1,1)
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine("Double click: send these rookies to their doom:", 0.1,0.9,0.1, 1)
 	for i=1,#g do
 		local fi = ft[g[i]]
-		GameTooltip:AddLine("|cffa0a0a0[" .. fi.level .. "]|r " .. fi.name, 1,1,1)
+		local willLevelUp = fi.levelXP and fi.xp and fi.levelXP - fi.xp <= xpR or false
+		local upTex = willLevelUp and " |A:bags-greenarrow:0:0|a" or ""
+		GameTooltip:AddLine("|cffa0a0a0[" .. fi.level .. "]|r " .. fi.name .. upTex, 1,1,1)
 		g[i] = fi.followerID
 	end
 	self.group = g
@@ -637,6 +667,9 @@ local function DoomRun_OnClick(self)
 	local mid = self:GetParent().missionID
 	local g = self.group
 	if not (mid and g and #g > 0) then return end
+	if GameTooltip:IsOwned(self) then
+		GameTooltip:Hide()
+	end
 	for i=1,#g do
 		C_Garrison.AddFollowerToMission(mid, g[i], i-1)
 	end
@@ -662,7 +695,7 @@ do -- Factory.ObjectGroup
 		end
 	end}
 	function Factory.ObjectGroup(...)
-		return setmetatable({...}, ObjectGroup_Meta)
+		return setmetatable(type((...)) == "table" and ... or {...}, ObjectGroup_Meta)
 	end
 end
 
@@ -1323,62 +1356,100 @@ function Factory.LogBookButton(parent)
 	return f
 end
 function Factory.FollowerListButton(parent, isTroop)
-	local co = CovenKit:lower()
 	local f,t = CreateFrame("CheckButton", nil, parent)
 	local f2 = CreateFrame("Frame", nil, f)
+	local ett = {}
 	f2:SetAllPoints()
 	f:RegisterForClicks("RightButtonUp")
 	f:RegisterForDrag("LeftButton")
 	f:SetMotionScriptsWhileDisabled(true)
-	f:SetHitRectInsets(6,6,10,6)
+	f:SetHitRectInsets(-3,4,0,5)
 	f:SetScript("OnDragStart", FollowerButton_OnDragStart)
 	f:SetScript("OnDragStop", FollowerButton_OnDragStop)
 	f:SetScript("OnClick", FollowerButton_OnClick)
 	f:SetScript("OnEnter", FollowerButton_OnEnter)
-	f:SetScript("OnLeave", HideOwnGameTooltip)
-	f:SetSize(55, 65)
-	f:SetNormalAtlas("covenantsanctum-renown-icon-border-" .. co)
-	f:SetDisabledAtlas("covenantsanctum-renown-icon-border-disabled")
-	f:SetHighlightAtlas("covenantsanctum-renown-icon-hover")
-	f:GetHighlightTexture():SetAlpha(0.8)
-	t = f:CreateTexture(nil, "BACKGROUND", nil, -1)
-	t:SetColorTexture(0,0,0)
-	t:SetPoint("CENTER")
-	t:SetSize(40,40)
-	if not isTroop then
-		f:SetCheckedTexture("Interface/Icons/Temp")
-		t = f:GetCheckedTexture()
-		t:SetAtlas("covenantsanctum-renown-next-border-" .. co)
-	end
-	t = f:CreateTexture(nil, "BACKGROUND")
-	t:SetSize(38,38)
-	t:SetPoint("CENTER", 0, 2)
+	f:SetScript("OnLeave", FollowerButton_OnLeave)
+	f:SetSize(70, 70)
+	t = f:CreateTexture(nil, "BORDER")
+	t:SetAtlas(isTroop and "adventurers-followers-frame-troops" or "adventurers-followers-frame")
+	t:SetSize(60, 60)
+	t:SetPoint("CENTER", 0, 5)
+	t, f.PortraitR = f:CreateTexture(nil, "BACKGROUND", nil, 1), t
+	t:SetSize(46, 46)
+	t:SetPoint("CENTER", 0, 5)
 	t:SetTexture(1605024)
-	t, f.Portrait = f2:CreateFontString(nil, "OVERLAY", "GameFontNormal"), t
-	t:SetPoint("BOTTOM", 0, 4)
-	t:SetText(64)
-	t, f.Level = f2:CreateFontString(nil, "OVERLAY", "NumberFontNormal"), t
-	t:SetPoint("CENTER", 0, 0)
-	t, f.MissionTimeLeft = f:CreateTexture(nil, "BACKGROUND", nil, 1), t
+	t:SetDesaturated(true)
+	t:SetBlendMode("ADD")
+	t:SetAlpha(0.5)
+	t, f.Portrait2 = f:CreateTexture(nil, "BACKGROUND"), t
+	t:SetSize(46, 46)
+	t:SetPoint("CENTER", 0, 5)
+	t:SetTexture(1605024)
+	t, f.Portrait = f2:CreateTexture(nil, "ARTWORK", nil, -1), t
 	t:SetColorTexture(1,1,1)
 	t:SetGradient("VERTICAL", 0.15,0.15,0.15, 0.2,0.2, 0.2)
-	t:SetAlpha(0.25)
-	t:SetSize(40, 7)
-	t:SetPoint("BOTTOM", 0, 14)
-	t, f.HealthBG = f:CreateTexture(nil, "BACKGROUND", nil, 2), t
+	t:SetSize(39, 12)
+	t:SetPoint("BOTTOMRIGHT", -9, 10)
+	t, f.HealthBG = f2:CreateTexture(nil, "ARTWORK"), t
 	t:SetColorTexture(1,1,1)
-	t:SetGradient("VERTICAL", 0.05,0.95, 0.05, 0.15,0.5,0.15)
-	t:SetAlpha(0.75)
-	t:SetSize(24, 7)
+	t:SetGradient("VERTICAL", 0.10,0.25,0.10, 0.05,0.5,0.05)
+	t:SetAlpha(0.85)
+	t:SetSize(24, f.HealthBG:GetHeight())
 	t:SetPoint("BOTTOMLEFT", f.HealthBG, "BOTTOMLEFT")
-	t, f.Health = f2:CreateTexture(nil, "ARTWORK"), t
-	t:SetSize(8,8)
-	t:SetPoint("CENTER", 13, 15)
-	t:SetTexture("Interface/Minimap/PartyRaidBlipsV2")
-	t:SetTexCoord(0, 20/64, 0, 20/32)
-	t:SetVertexColor(0.1, 0.85, 0.1)
+	t, f.Health = f2:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall"), t
+	t:SetPoint("BOTTOMLEFT", f, "BOTTOM", -6, 11)
+	t, f.TextLabel = f2:CreateTexture(nil, "ARTWORK"), t
+	t:SetSize(16,18)
+	t:SetAtlas("bags-greenarrow")
+	t:SetPoint("BOTTOMRIGHT", -6, 6)
 	t:Hide()
 	f.Blip = t
+	t = f2:CreateTexture(nil, "ARTWORK", nil, 4)
+	t:SetAtlas("adventure-healthbar")
+	t:SetPoint("BOTTOMRIGHT", -5, -5)
+	t:SetTexCoord(30/89, 1, 0, 1)
+	t:SetSize(48, 36)
+	f.HealthFrameR = t
+	t = f2:CreateTexture(nil, "ARTWORK", nil, 5)
+	t:SetAtlas("adventures-tank")
+	t:SetSize(20.53,22)
+	t:SetPoint("BOTTOMLEFT", 4, 5)
+	f.Role = t
+	t = f2:CreateTexture(nil, "ARTWORK", nil, 6)
+	t:SetAtlas("adventure_ability_frame")
+	t:SetSize(26.72, 26)
+	t:SetPoint("CENTER", f.Role, "CENTER", 0, -2)
+	f.RoleB, ett[#ett+1] = t, t
+	f.Abilities, f.AbilitiesB = {}, {}
+	for i=1,2 do
+		t = f2:CreateTexture(nil, "ARTWORK", nil, 3)
+		t:SetAtlas("adventure_ability_frame")
+		t:SetSize(26.72, 26)
+		t:SetPoint("CENTER", f.Portrait, "CENTER", cos(232-i*42)*30, sin(232-i*42)*30)
+		t, ett[#ett+1], f.AbilitiesB[i] = f2:CreateTexture(nil, "ARTWORK", nil, 2), t, t
+		t:SetSize(17, 17)
+		t:SetPoint("CENTER", f.AbilitiesB[i], "CENTER", 0, 1)
+		t:SetTexture("Interface/Icons/Temp")
+		t:SetMask("Interface/Masks/CircleMaskScalable")
+		f.Abilities[i] = t
+	end
+	ett[#ett+1] = f.HealthFrameR
+	t = f:CreateTexture(nil, "HIGHLIGHT")
+	t:SetTexture("Interface/Common/CommonRoundHighlight")
+	t:SetTexCoord(0,58/64,0,58/64)
+	t:SetPoint("TOPLEFT", f.Portrait, "TOPLEFT", -1, 1)
+	t:SetPoint("BOTTOMRIGHT", f.Portrait, "BOTTOMRIGHT", 1,-1)
+	f.Hi = t
+	if not isTroop then
+		t = f:CreateTexture(nil, "BORDER", nil, -1)
+		t:SetAtlas("adventures-buff-heal-ring")
+		local divC = CovenKit == "Kyrian" and 0x78c7ff or CovenKit == "Venthyr" and 0xcf1500 or CovenKit == "Necrolord" and 0x76c900 or 0x0058e6
+		t:SetVertexColor(divC / 2^24, divC/256 % 256 / 255, divC%256/255)
+		t:SetPoint("TOPLEFT", f.PortraitR, "TOPLEFT", -6, 6)
+		t:SetPoint("BOTTOMRIGHT", f.PortraitR, "BOTTOMRIGHT", 6, -6)
+		f.EC = t
+	end
+	f.ExtraTex = CreateObject("ObjectGroup", ett)
 	f.GetInfo = FollowerButton_GetInfo
 	f.GetFollowerGUID = FollowerButton_GetFollowerGUID
 	f.SetEmpty = nop
@@ -1386,13 +1457,25 @@ function Factory.FollowerListButton(parent, isTroop)
 end
 function Factory.FollowerList(parent)
 	local f,t = CreateFrame("Frame", nil, parent)
-	f:SetSize(300, 370)
+	f:SetSize(320, 370)
 	t = f:CreateTexture(nil, "BACKGROUND")
 	t:SetAllPoints()
 	t:SetAtlas("adventures-followers-bg")
 	t = f:CreateTexture(nil, "BORDER")
-	t:SetAllPoints()
+	t:SetPoint("TOPLEFT")
+	t:SetSize(320, 84)
 	t:SetAtlas("adventures-followers-frame")
+	t:SetTexCoord(0,1, 0, 50/311)
+	t = f:CreateTexture(nil, "BORDER")
+	t:SetPoint("BOTTOMLEFT")
+	t:SetSize(320, 84)
+	t:SetAtlas("adventures-followers-frame")
+	t:SetTexCoord(0,1, 261/311,1)
+	t = f:CreateTexture(nil, "BORDER")
+	t:SetAtlas("adventures-followers-frame")
+	t:SetPoint("TOPLEFT", 0, -84)
+	t:SetPoint("BOTTOMRIGHT", 0, 84)
+	t:SetTexCoord(0,1,50/311,261/311)
 	
 	t = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	t:SetText(FOLLOWERLIST_LABEL_TROOPS)
@@ -1400,16 +1483,16 @@ function Factory.FollowerList(parent)
 	f.troops = {}
 	for i=1,2 do
 		f.troops[i] = CreateObject("FollowerListButton", f, true)
-		f.troops[i]:SetPoint("TOPLEFT", (i-1)*56+8, -25)
+		f.troops[i]:SetPoint("TOPLEFT", (i-1)*76+14, -35)
 	end
 
 	t = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 	t:SetText(COVENANT_MISSION_FOLLOWER_CATEGORY)
-	t:SetPoint("TOPLEFT", 12, -100)
+	t:SetPoint("TOPLEFT", 12, -110)
 	f.companions = {}
 	for i=1,20 do
 		t = CreateObject("FollowerListButton", f, false)
-		t:SetPoint("TOPLEFT", ((i-1)%5)*56+8, -math.floor((i-1)/5)*60-110)
+		t:SetPoint("TOPLEFT", ((i-1)%4)*76+14, -math.floor((i-1)/4)*72-130)
 		f.companions[i] = t
 	end
 	f:SetPoint("LEFT", UIParent, "LEFT", 20, 0)

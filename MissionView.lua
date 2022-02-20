@@ -193,15 +193,15 @@ local function Puck_OnEnter(self)
 						guideLine = "Targets: " .. b
 					end
 				end
-				if si and (si.healATK or si.damageATK or si.healPerc or si.damagePerc) then
+				if si.healATK or si.damageATK or si.healPerc or si.damagePerc then
 					local p = FormatSpellPulse(si)
 					if p then
 						guideLine = "Pulse: " .. p .. (guideLine and "    " .. guideLine or "")
 					end
 				end
-			end
-			if si.desc then
-				dc, guideLine = 0.60, si.desc .. (guideLine and "|n" .. guideLine or "")
+				if si.desc then
+					dc, guideLine = 0.60, si.desc .. (guideLine and "|n" .. guideLine or "")
+				end
 			end
 			GameTooltip:AddLine(s.description, dc, dc, dc, 1)
 			if guideLine then
@@ -437,7 +437,7 @@ local function MissionRewards_OnShow(self)
 		FollowerList:SyncXPGain(xp)
 	end
 end
-local function MissionView_OnShow(self)
+local function MissionView_OnShow()
 	if not FollowerList then
 		FollowerList = T.CreateObject("FollowerList", CovenantMissionFrame)
 		FollowerList:ClearAllPoints()
@@ -449,7 +449,7 @@ local function MissionView_OnShow(self)
 	CovenantMissionFrameFollowers.MaterialFrame:SetParent(FollowerList)
 	CovenantMissionFrameFollowers.HealAllButton:SetParent(FollowerList)
 end
-local function MissionView_OnHide(self)
+local function MissionView_OnHide()
 	if FollowerList then
 		FollowerList:Hide()
 	end
