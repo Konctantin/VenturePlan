@@ -219,9 +219,8 @@ function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _fo
 		end
 	end
 	if cr.environment and cr.environment.autoCombatSpellInfo then
-		for _, s in pairs(cr.environment.autoCombatSpellInfo) do
-			s.previewMask, s.schoolMask, s.icon, s.spellTutorialFlag = nil
-		end
+		local s = cr.environment.autoCombatSpellInfo
+		s.previewMask, s.schoolMask, s.icon, s.spellTutorialFlag = nil
 	end
 	
 	local fm, mi = {}, GetCompletedMissionInfo(mid)

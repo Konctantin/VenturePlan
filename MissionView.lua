@@ -7,11 +7,11 @@ local function GetTargetMask(si, casterBoardIndex, boardMask)
 	for i=0,12 do
 		board[i] = boardMask % 2^(i+1) >= 2^i and u or nil
 	end
-	local pt, tt = si.pretarget, si.target
+	local tt = si.target
 	if #si > 0 then
 		for i=1,#si do
 			if si[i].target ~= 4 then
-				pt, tt = si[i].pretarget, si[i].target
+				tt = si[i].target
 				break
 			end
 		end
@@ -19,16 +19,9 @@ local function GetTargetMask(si, casterBoardIndex, boardMask)
 	if tt == nil then
 		return 0
 	end
-	if type(tt) == "number" then
-		local t = TP:GetTarget(casterBoardIndex, tt, board)
-		return t and 2^t or 0
-	end
-	local r, pta = 0, pt and T.VSim.TP:GetTarget(casterBoardIndex, pt, board)
-	if pt and not pta then return 0 end
-	for i=0,12 do
-		if board[i] and TP.isValidTarget(tt, casterBoardIndex, i, u, u, pta) then
-			r = r + 2^i
-		end
+	local r, ta = 0, TP.GetTargets(casterBoardIndex, tt, board)
+	for i=1,ta and #ta or 0 do
+		r = r + 2^ta[i]
 	end
 	return r
 end
@@ -41,6 +34,27 @@ local function GenBoardMask()
 		end
 	end
 	return m
+end
+local function FormatTargetBlips(tm, bm, prefix)
+	local r, xs = "", 0
+	if tm % 32 > 0 then
+		for i=0,4 do
+			local t, p = tm % 2^(i+1) >= 2^i, bm % 2^(i+1) >= 2^i
+			r = r .. "|TInterface/Minimap/PartyRaidBlipsV2:8:8:" .. (i < 2 and "4:-4" or "-18:4").. ":64:32:0:20:0:20:" .. (t and "120:255:0|t" or p and "160:160:160|t" or "40:40:40|t")
+		end
+		xs = -10
+	end
+	if tm >= 32 then
+		local lo, hi = xs .. ":-4", (xs-36) .. ":4"
+		for i=5,12 do
+			local t, p = tm % 2^(i+1) >= 2^i, bm % 2^(i+1) >= 2^i
+			r = r .. "|TInterface/Minimap/PartyRaidBlipsV2:8:8:" .. (i > 8 and hi or lo).. ":64:32:0:20:0:20:" .. (t and "120:255:0|t" or p and "160:160:160|t" or "40:40:40|t")
+		end
+	end
+	if prefix and r ~= "" then
+		r = prefix .. r
+	end
+	return r
 end
 local function Puck_OnEnter(self)
 	if self.name then
@@ -62,7 +76,11 @@ local function Puck_OnEnter(self)
 			mhp, hp, atk, role = acs.maxHealth, acs.currentHealth, acs.attack, self.info.role
 			aat = T.VSim.TP:GetAutoAttack(role, self.boardIndex, mid, s1 and s1.autoCombatSpellID)
 		end
-		local atype = aat == 11 and " (melee)" or aat == 15 and " (ranged)" or ""
+		local bm = GenBoardMask()
+		local atype = FormatTargetBlips(GetTargetMask(T.KnownSpells[aat], self.boardIndex, bm), bm, " ")
+		if atype == "" then
+			atype = aat == 11 and " (melee)" or aat == 15 and " (ranged)" or ""
+		end
 		GameTooltip:AddLine("|A:ui_adv_health:20:20|a" .. (hp and BreakUpLargeNumbers(hp) or "???") .. (mhp and mhp ~= hp and ("|cffa0a0a0/|r" .. BreakUpLargeNumbers(mhp)) or "").. "  |A:ui_adv_atk:20:20|a" .. (atk and BreakUpLargeNumbers(atk) or "???") .. "|cffa8a8a8" .. atype, 1,1,1)
 		for i=1,#self.autoCombatSpells do
 			local s = self.autoCombatSpells[i]
@@ -74,23 +92,11 @@ local function Puck_OnEnter(self)
 			if si and si.type == "nop" then
 				dc, guideLine = 0.60, "It does nothing."
 			elseif si then
-				local bm = GenBoardMask()
 				local tm = GetTargetMask(si, self.boardIndex, bm)
-				if tm and tm > 0 and ((tm % 32 == 0) or (tm < 32)) then
-					if tm < 32 then
-						local r = ""
-						for i=0,4 do
-							local t, p = tm % 2^(i+1) >= 2^i, bm % 2^(i+1) >= 2^i
-							r = r .. "|TInterface/Minimap/PartyRaidBlipsV2:8:8:" .. (i < 2 and "4:-4" or "-18:4").. ":64:32:0:20:0:20:" .. (t and "120:255:0|t" or p and "160:160:160|t" or "40:40:40|t")
-						end
-						guideLine = "Targets: " .. r
-					else
-						local r = ""
-						for i=5,12 do
-							local t, p = tm % 2^(i+1) >= 2^i, bm % 2^(i+1) >= 2^i
-							r = r .. "|TInterface/Minimap/PartyRaidBlipsV2:8:8:" .. (i > 8 and "-36:4" or "0:-4").. ":64:32:0:20:0:20:" .. (t and "120:255:0|t" or p and "160:160:160|t" or "40:40:40|t")
-						end
-						guideLine = "Targets: " .. r
+				if tm > 0 then
+					local b = FormatTargetBlips(tm, bm)
+					if b and b ~= "" then
+						guideLine = "Targets: " .. b
 					end
 				end
 			end
@@ -101,6 +107,8 @@ local function Puck_OnEnter(self)
 		end
 		GameTooltip:Show()
 		self:GetBoard():ShowHealthValues()
+	elseif GameTooltip:IsOwned(self) then
+		GameTooltip:Hide()
 	end
 end
 local function Puck_OnLeave(self)
@@ -180,7 +188,7 @@ local function Predictor_OnClick(self)
 	end
 	if ms and next(ms) then
 		GameTooltip:AddLine(" ")
-		GameTooltip:AddLine("Not all abilities have not been taken into account.", 0.9,0.25,0.15,1)
+		GameTooltip:AddLine("|TInterface/EncounterJournal/UI-EJ-WarningTextIcon:0|t Not all abilities have been taken into account.", 0.9,0.25,0.15,1)
 	end
 	GameTooltip:Show()
 end
@@ -193,6 +201,12 @@ local function MissionStartButton_PreClick()
 	local mi  = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
 	local mid = mi.missionID
 	EV("I_MISSION_PRE_START", mid)
+end
+local function MissionGroup_OnUpdate()
+	local o = GameTooltip:IsVisible() and GameTooltip:GetOwner() or GetMouseFocus()
+	if o and not o:IsForbidden() and o:GetScript("OnEnter") and o:GetParent():GetParent() == CovenantMissionFrame.MissionTab.MissionPage.Board then
+		o:GetScript("OnEnter")(o)
+	end
 end
 
 function EV:I_ADVENTURES_UI_LOADED()
@@ -230,5 +244,7 @@ function EV:I_ADVENTURES_UI_LOADED()
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnEnter", EnvironmentEffect_OnEnter)
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnLeave", EnvironmentEffect_OnLeave)
 	hooksecurefunc(MP.Stage.EnvironmentEffectFrame.Name, "SetText", EnvironmentEffect_OnNameUpdate)
+	hooksecurefunc(CovenantMissionFrame, "AssignFollowerToMission", MissionGroup_OnUpdate)
+	hooksecurefunc(CovenantMissionFrame, "RemoveFollowerFromMission", MissionGroup_OnUpdate)
 	return false
 end

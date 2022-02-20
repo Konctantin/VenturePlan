@@ -3,7 +3,7 @@
 ## Notes: Interface improvements for Adventures.
 ## Author: foxlit
 ## X-Website: https://www.townlong-yak.com/addons/venture-plan
-## Version: 4.02
+## Version: 4.03
 ## SavedVariables: VP_MissionReports
 Libs/Evie.lua
 Widgets.lua

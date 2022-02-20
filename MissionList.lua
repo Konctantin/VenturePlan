@@ -73,8 +73,8 @@ local function LogCounter_OnClick(self)
 	cb.FirstInputBox:SetCursorPosition(0)
 	cb.SecondInputBox:SetText(T.ExportMissionReports())
 	cb.SecondInputBox:SetCursorPosition(0)
-	
 	cb:Show()
+	PlaySound(170567)
 end
 local function LogCounter_Update()
 	local lc, c = MissionPage.LogCounter, T.GetMissionReportCount()
@@ -133,7 +133,7 @@ local function ConfigureReward(w, rew, isOvermax, pw)
 	w.OvermaxRewardIcon:SetShown(isOvermax)
 	w.currencyID, w.currencyAmount, w.itemID, w.tooltipExtra, w.tooltipHeader, w.tooltipText = rew.currencyID, rew.quantity, rew.itemID, overfullText, tooltipTitle, tooltipText
 	w.currencyQ = cq
-	w.Quantity:SetText(q or "")
+	w.Quantity:SetText(q == 1 and "" or q or "")
 end
 local function ConfigureMission(me, mi, isAvailable)
 	local mid = mi.missionID
@@ -174,7 +174,7 @@ local function ConfigureMission(me, mi, isAvailable)
 		me.ProgressBar.Text:SetText("Click to complete")
 	end
 	me.ProgressBar:SetMouseMotionEnabled(me.completableAfter and me.completableAfter <= timeNow)
-	me:SetCountdown(expirePrefix, expireAt, nil, nil, false, expireRoundUp)
+	me:SetCountdown(expirePrefix, expireAt, nil, nil, true, expireRoundUp)
 
 	baseXPReward.followerXP = mdi.xp
 	ConfigureReward(me.Rewards[1], baseXPReward)

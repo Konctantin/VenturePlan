@@ -153,7 +153,6 @@ local function MissionButton_OnClick(self)
 		end
 	end
 end
-
 local function Progress_UpdateTimer(self)
 	local now, endTime = GetTime(), self.endTime
 	if endTime <= now then
@@ -239,7 +238,9 @@ local function CurrencyMeter_OnHide(self)
 	self:SetParent(nil)
 	self:ClearAllPoints()
 end
-
+local function PlaySoundKit_OnHide(self)
+	PlaySound(self.soundKitOnHide)
+end
 
 local function CountdownText_OnUpdate(self)
 	local now = GetTime()
@@ -384,6 +385,7 @@ function Factory.RaisedBorder(parent)
 end
 function Factory.LockedCopyInputBox(parent)
 	local f = CreateFrame("EditBox", nil, parent, "InputBoxTemplate")
+	f:SetHighlightColor(1,0.8,0.3, 0.6)
 	f:SetScript("OnEscapePressed", f.ClearFocus)
 	f:SetScript("OnTextChanged", LockedInputBox_OnTextChanged)
 	f:SetAutoFocus(false)
@@ -457,6 +459,9 @@ function Factory.CopyBoxUI(parent)
 		f:Hide()
 	end)
 	f.CloseButton2 = t
+	
+	f.soundKitOnHide = 170568
+	f:SetScript("OnHide", PlaySoundKit_OnHide)
 	
 	return f
 end
@@ -582,8 +587,8 @@ function Factory.MissionButton(parent)
 	t:SetPoint("TOP", cf.Name, "BOTTOM", 0, -26)
 	t:SetText("There is no cow level. Our forces, however, have discovered a goat level. Perhaps there's even epic goat loot? You should go rescue the goats. Who knows what would happen if the Horde got there first.")
 	t, cf.Description = cf:CreateFontString(nil, "OVERLAY", "GameFontBlack"), t
-	t:SetPoint("BOTTOM", cf, 0, 7)
-	t:SetText("Expires: two weeks ago")
+	t:SetPoint("BOTTOMLEFT", cf, 14, 16)
+	t:SetText("Expired")
 	cf.ExpireTime = t
 	CreateObject("CountdownText", cf, t)
 
@@ -637,9 +642,9 @@ function Factory.MissionButton(parent)
 	t.Fill:SetAtlas("UI-Frame-Bar-Fill-Blue")
 	cf.ProgressBar = t
 	local gb = CreateFrame("Button", nil, cf, "UIPanelButtonTemplate")
-	gb:SetPoint("BOTTOM", 0, 22)
+	gb:SetPoint("BOTTOM", 0, 12)
 	gb:SetText("Select adventurers")
-	gb:SetSize(180, 21)
+	gb:SetSize(160, 21)
 	gb:SetScript("OnClick", function(self)
 		local mf = self:GetParent()
 		local c = C_Garrison.GetAvailableMissions(123)
@@ -648,9 +653,11 @@ function Factory.MissionButton(parent)
 				local mi = c[i]
 				mi.missionID = mf.missionID
 				mi.encounterIconInfo = C_Garrison.GetMissionEncounterIconInfo(mf.missionID)
+				PlaySound(SOUNDKIT.UI_GARRISON_COMMAND_TABLE_SELECT_MISSION)
 				CovenantMissionFrame:GetMissionPage():Show()
 				CovenantMissionFrame:ShowMission(mi)
 				self:GetParent():GetParent():GetParent():GetParent():Hide()
+				break
 			end
 		end
 	end)
