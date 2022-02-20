@@ -144,8 +144,8 @@ local checkpointBoard do
 end
 local function checkSim(cr)
 	local eei = cr.environment
-	local esid = eei and eei.autoCombatSpellInfo and eei.autoCombatSpellInfo.autoCombatSpellID
-	local sim = T.VSim:New(cr.followers, cr.encounters, esid, cr.missionID, logOracle(cr.log))
+	local envs = eei and eei.autoCombatSpellInfo
+	local sim = T.VSim:New(cr.followers, cr.encounters, envs, cr.missionID, cr.missionScalar, logOracle(cr.log))
 	sim:Run(0)
 	local checkpoints = {} do
 		local b = {}
@@ -169,6 +169,9 @@ local function checkSim(cr)
 				end
 			end
 			checkpoints[t] = checkpointBoard(b)
+		end
+		if checkpoints[#checkpoints] == checkpoints[#checkpoints-1] then
+			checkpoints[#checkpoints] = nil
 		end
 	end
 	if #checkpoints ~= #sim.checkpoints then
@@ -203,7 +206,7 @@ local function findOldestReport(logs, st, novel)
 	return #logs+1
 end
 function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _followerDeaths, autoCombatResult)
-	if not (autoCombatResult and autoCombatResult.combatLog) then return end
+	if not (autoCombatResult and autoCombatResult.combatLog and mid and C_Garrison.GetFollowerTypeByMissionID(mid) == 123) then return end
 	local cr = {
 		log=autoCombatResult.combatLog, winner=autoCombatResult.winner, missionID=mid,
 		meta={lc=GetLocale(), ts=math.floor(GetServerTime()/86400), cb=select(2,GetBuildInfo()), dv=1},

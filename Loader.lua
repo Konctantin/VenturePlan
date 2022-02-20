@@ -7,12 +7,13 @@ function EV:ADVENTURE_MAP_OPEN(followerID)
 		return "remove"
 	end
 	mapOpened = followerID == 123
-	if mapOpened and addonLoaded then
+	if mapOpened and IsAddOnLoaded("Blizzard_GarrisonUI") then
+		addonLoaded = true
 		EV("I_ADVENTURES_UI_LOADED")
 	end
 end
 function EV:ADDON_LOADED(aname)
-	if aname == "Blizzard_GarrisonUI" then
+	if aname == "Blizzard_GarrisonUI" and not addonLoaded then
 		addonLoaded = true
 		if mapOpened then
 			EV("I_ADVENTURES_UI_LOADED")

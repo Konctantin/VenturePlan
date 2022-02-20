@@ -82,59 +82,6 @@ local function LogCounter_Update()
 	lc:SetText(BreakUpLargeNumbers(c))
 end
 
-local baseXPReward = {title="Follower XP", tooltip="Awarded even if the adventurers are defeated.", icon="Interface/Icons/XP_Icon", qualityAtlas="loottoast-itemborder-purple"}
-
-local function ConfigureReward(w, rew, isOvermax, pw)
-	w:SetShown(not not rew)
-	if not rew then
-		return
-	end
-	local q, tooltipTitle, tooltipText, cq = rew.quantity, rew.title
-	if rew.icon then
-		w.Icon:SetTexture(rew.icon)
-	elseif rew.itemID then
-		w.Icon:SetTexture(GetItemIcon(rew.itemID))
-	end
-	if rew.currencyID then
-		w.RarityBorder:SetAtlas("loottoast-itemborder-gold")
-		if rew.currencyID == 0 then
-			q = math.floor(rew.quantity / 1e4)
-			tooltipText = GetMoneyString(rew.quantity)
-		else
-			local ci = C_CurrencyInfo.GetCurrencyContainerInfo(rew.currencyID, rew.quantity)
-			if ci then
-				w.Icon:SetTexture(ci.icon)
-				tooltipTitle = (ci.quality and "|c" .. (select(4,GetItemQualityColor(ci.quality)) or "ff00ffff") or "") .. ci.name
-				tooltipText = NORMAL_FONT_COLOR_CODE .. (ci.description or "")
-				local lb = LOOT_BORDER_BY_QUALITY[ci.quality]
-				if lb then
-					w.RarityBorder:SetAtlas(lb)
-				end
-			end
-			if rew.currencyID == 1828 then
-				w.RarityBorder:SetAtlas("loottoast-itemborder-orange")
-			end
-			cq = (isOvermax and pw and pw.currencyID == rew.currencyID and pw.currencyQ or 0) + q
-		end
-	elseif rew.itemID then
-		q = rew.quantity == 1 and "" or rew.quantity or ""
-		local _,_,r = GetItemInfo(rew.itemID)
-		w.RarityBorder:SetAtlas(
-			((r or 2) <= 2) and "loottoast-itemborder-green"
-			or r == 3 and "loottoast-itemborder-blue"
-			or r == 4 and "loottoast-itemborder-purple"
-			or "loottoast-itemborder-orange"
-		)
-	elseif rew.followerXP then
-		q, tooltipTitle, tooltipText = BreakUpLargeNumbers(rew.followerXP), rew.title, rew.tooltip
-		w.RarityBorder:SetAtlas(rew.qualityAtlas or "loottoast-itemborder-green")
-	end
-	local overfullText = isOvermax and "|cffff8000" .. "Bonus roll reward" .. "|r" or nil
-	w.OvermaxRewardIcon:SetShown(isOvermax)
-	w.currencyID, w.currencyAmount, w.itemID, w.tooltipExtra, w.tooltipHeader, w.tooltipText = rew.currencyID, rew.quantity, rew.itemID, overfullText, tooltipTitle, tooltipText
-	w.currencyQ = cq
-	w.Quantity:SetText(q == 1 and "" or q or "")
-end
 local function ConfigureMission(me, mi, isAvailable)
 	local mid = mi.missionID
 	local emi = C_Garrison.GetMissionEncounterIconInfo(mid)
@@ -145,13 +92,6 @@ local function ConfigureMission(me, mi, isAvailable)
 	me.hasOvermaxRewards = not not (mi.overmaxRewards and mi.overmaxRewards[1])
 	me.hasUsefulOvermaxRewards = mi.overmaxRewardScore ~= 0
 	me.Name:SetText(mi.name)
-	if mi.isElite then
-		me.Name:SetTextColor(1, 0xf0/255, 0x48/255)
-	elseif mi.isRare then
-		me.Name:SetTextColor(0x70/255, 0xD8/255, 0xFF/255)
-	else
-		me.Name:SetTextColor(0.97, 0.97, 0.80)
-	end
 	if (mi.description or "") ~= "" then
 		me.Description:SetText(mi.description)
 	end
@@ -175,11 +115,9 @@ local function ConfigureMission(me, mi, isAvailable)
 	end
 	me.ProgressBar:SetMouseMotionEnabled(me.completableAfter and me.completableAfter <= timeNow)
 	me:SetCountdown(expirePrefix, expireAt, nil, nil, true, expireRoundUp)
-
-	baseXPReward.followerXP = mdi.xp
-	ConfigureReward(me.Rewards[1], baseXPReward)
-	ConfigureReward(me.Rewards[2], mi.rewards and mi.rewards[1])
-	ConfigureReward(me.Rewards[3], mi.rewards and mi.rewards[2])
+	me.Rewards[1]:SetReward("xp", mdi.xp)
+	me.Rewards[2]:SetReward(mi.rewards and mi.rewards[1])
+	me.Rewards[3]:SetReward(mi.rewards and mi.rewards[2])
 	me.Rewards.Container:SetWidth(52*(1+#mi.rewards)-2)
 	me.AchievementReward.assetID = mi.missionID
 	me.AchievementReward.achievementID = mi.achievementID
@@ -210,12 +148,16 @@ local function ConfigureMission(me, mi, isAvailable)
 			totalATK = totalATK + e.attack
 		end
 	end
+	local tag = "[" .. (mi.missionScalar or 0) .. (mi.isElite and "+]" or mi.isRare and "r]" or "]")
+	if hasNovelSpells then
+		tag = tag .. " |TInterface/EncounterJournal/UI-EJ-WarningTextIcon:16:16|t"
+	end
 	me.enemyATK:SetText(BreakUpLargeNumbers(totalATK))
 	me.enemyHP:SetText(BreakUpLargeNumbers(totalHP))
 	me.animaCost:SetText(BreakUpLargeNumbers(mi.cost))
 	me.duration:SetText(mi.duration)
 	me.statLine:SetWidth(me.duration:GetRight() - me.statLine:GetLeft())
-	me.sciIcon:SetShown(hasNovelSpells)
+	me.TagText:SetText(tag)
 	
 	me:Show()
 end
@@ -248,6 +190,7 @@ local function cmpMissionInfo(a,b)
 	return a.name < b.name
 end
 local function UpdateMissions()
+	MissionList.dirty = nil
 	local missions = C_Garrison.GetAvailableMissions(123) or {}
 	local inProgressMissions = C_Garrison.GetInProgressMissions(123)
 	local cMissions = C_Garrison.GetCompleteMissions(123)
@@ -279,6 +222,13 @@ local function UpdateMissions()
 	end
 end
 
+local function QueueListSync()
+	if MissionList:IsShown() and not MissionList.dirty then
+		MissionList.dirty = true
+		C_Timer.After(0, UpdateMissions)
+	end
+end
+
 local function HookAndCallOnShow(frame, f)
 	frame:HookScript("OnShow", f)
 	if frame:IsVisible() then
@@ -301,6 +251,7 @@ function EV:I_ADVENTURES_UI_LOADED()
 	end)
 	hooksecurefunc(C_Garrison, "MissionBonusRoll", FlagMissionFinish)
 	EV.I_STORED_LOG_UPDATE = LogCounter_Update
+	EV.GARRISON_MISSION_LIST_UPDATE = QueueListSync
 	MissionPage.CopyBox.ResetButton:SetScript("OnClick", function(self)
 		EV("I_RESET_STORED_LOGS")
 		self:GetParent():Hide()

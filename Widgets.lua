@@ -29,13 +29,17 @@ end
 local function GetTimeStringFromSeconds(sec, shorter, roundUp, disallowSeconds)
 	local h = roundUp and math.ceil or math.floor
 	if sec < 90 and not disallowSeconds then
-		return (shorter and COOLDOWN_DURATION_SEC or GARRISON_DURATION_SECONDS):format(sec < 0 and 0 or h(sec))
-	elseif sec < 3600*3 and (sec % 3600 >= 1) then
-		return (shorter and COOLDOWN_DURATION_MIN or GARRISON_DURATION_MINUTES):format(h(sec/60))
-	elseif sec < 3600*72 then
-		return (shorter and COOLDOWN_DURATION_HOURS or GARRISON_DURATION_HOURS):format(h(sec/3600))
+		return (shorter and COOLDOWN_DURATION_SEC or INT_GENERAL_DURATION_SEC):format(sec < 0 and 0 or h(sec))
+	elseif (sec < 3600*(shorter and 3 or 1) and (sec % 3600 >= 1)) then
+		return (shorter and COOLDOWN_DURATION_MIN or INT_GENERAL_DURATION_MIN):format(h(sec/60))
+	elseif sec <= 3600*72 and not shorter then
+		sec = h(sec/60)*60
+		local m = math.ceil(sec % 3600 / 60)
+		return INT_GENERAL_DURATION_HOURS:format(math.floor(sec / 3600)) .. (m > 0 and " " .. INT_GENERAL_DURATION_MIN:format(m) or "")
+	elseif sec <= 3600*72 then
+		return (shorter and COOLDOWN_DURATION_HOURS or INT_GENERAL_DURATION_HOURS):format(h(sec/3600))
 	else
-		return (shorter and COOLDOWN_DURATION_DAYS or GARRISON_DURATION_DAYS):format(h(sec/84600))
+		return (shorter and COOLDOWN_DURATION_DAYS or INT_GENERAL_DURATION_DAYS):format(h(sec/84600))
 	end
 end
 local function CommonTooltip_OnEnter(self)
@@ -58,6 +62,8 @@ local function CommonTooltip_OnEnter(self)
 				GameTooltip:AddLine(a.description, 1,1,1,1)
 			end
 		end
+	elseif self.itemLink then
+		GameTooltip:SetHyperlink(self.itemLink)
 	elseif self.itemID then
 		GameTooltip:SetItemByID(self.itemID)
 	elseif self.tooltipHeader and self.tooltipText then
@@ -96,6 +102,14 @@ local function CommonTooltip_OnEnter(self)
 		GameTooltip:Hide()
 		return
 	end
+	if self.ShowQuantityFromWidgetText then
+		local w = self[self.ShowQuantityFromWidgetText]
+		local t = w and w:GetText() or ""
+		local c = NORMAL_FONT_COLOR
+		if t ~= "" then
+			GameTooltip:AddLine("Quantity:" .. " |cffffffff" .. t, c.r, c.g, c.b)
+		end
+	end
 	if self.tooltipExtra then
 		GameTooltip:AddLine(self.tooltipExtra, 1,1,1)
 	end
@@ -106,7 +120,9 @@ local function CommonTooltip_OnEnter(self)
 	end
 end
 local function CommonLinkable_OnClick(self)
-	if not IsModifiedClick("CHATLINK") then
+	if self.itemLink then
+		HandleModifiedItemClick(self.itemLink)
+	elseif not IsModifiedClick("CHATLINK") then
 	elseif self.achievementID then
 		ChatEdit_InsertLink(GetAchievementLink(self.achievementID))
 	elseif self.itemID then
@@ -297,6 +313,65 @@ local function ResourceButton_OnClick(self)
 		ChatEdit_InsertLink(C_CurrencyInfo.GetCurrencyLink(self.currencyID, 42))
 	end
 end
+local RewardButton_SetReward do
+	local baseXPReward = {title="Follower XP", tooltip="Awarded even if the adventurers are defeated.", icon="Interface/Icons/XP_Icon", qualityAtlas="loottoast-itemborder-purple"}
+	function RewardButton_SetReward(self, rew, isOvermax, pw)
+		if rew == "xp" then
+			baseXPReward.followerXP = isOvermax
+			return RewardButton_SetReward(self, baseXPReward)
+		end
+		self:SetShown(not not rew)
+		if not rew then
+			return
+		end
+		local q, tooltipTitle, tooltipText, cq = rew.quantity, rew.title
+		if rew.icon then
+			self.Icon:SetTexture(rew.icon)
+		elseif rew.itemID then
+			self.Icon:SetTexture(GetItemIcon(rew.itemID))
+		end
+		if rew.currencyID then
+			self.RarityBorder:SetAtlas("loottoast-itemborder-gold")
+			if rew.currencyID == 0 then
+				q = math.floor(rew.quantity / 1e4)
+				tooltipText = GetMoneyString(rew.quantity)
+			else
+				local ci = C_CurrencyInfo.GetCurrencyContainerInfo(rew.currencyID, rew.quantity)
+				if ci then
+					self.Icon:SetTexture(ci.icon)
+					tooltipTitle = (ci.quality and "|c" .. (select(4,GetItemQualityColor(ci.quality)) or "ff00ffff") or "") .. ci.name
+					tooltipText = NORMAL_FONT_COLOR_CODE .. (ci.description or "")
+					local lb = LOOT_BORDER_BY_QUALITY[ci.quality]
+					if lb then
+						self.RarityBorder:SetAtlas(lb)
+					end
+				end
+				if rew.currencyID == 1828 then
+					self.RarityBorder:SetAtlas("loottoast-itemborder-orange")
+				end
+				cq = (isOvermax and pw and pw.currencyID == rew.currencyID and pw.currencyQ or 0) + q
+			end
+		elseif rew.itemID then
+			q = rew.quantity == 1 and "" or rew.quantity or ""
+			local _,_,r = GetItemInfo(rew.itemID)
+			self.RarityBorder:SetAtlas(
+				((r or 2) <= 2) and "loottoast-itemborder-green"
+				or r == 3 and "loottoast-itemborder-blue"
+				or r == 4 and "loottoast-itemborder-purple"
+				or "loottoast-itemborder-orange"
+			)
+		elseif rew.followerXP then
+			q, tooltipTitle, tooltipText = BreakUpLargeNumbers(rew.followerXP), rew.title, rew.tooltip
+			self.RarityBorder:SetAtlas(rew.qualityAtlas or "loottoast-itemborder-green")
+		end
+		local overfullText = isOvermax and "|cffff8000" .. "Bonus roll reward" .. "|r" or nil
+		self.OvermaxRewardIcon:SetShown(isOvermax)
+		self.currencyID, self.currencyAmount, self.currencyQ = rew.currencyID, rew.quantity, cq
+		self.itemID, self.itemLink = rew.itemID, rew.itemLink
+		self.tooltipExtra, self.tooltipHeader, self.tooltipText = overfullText, tooltipTitle, tooltipText
+		self.Quantity:SetText(q == 1 and "" or q or "")
+	end
+end
 
 do -- Factory.ObjectGroup
 	local NamedMethodCallCache = setmetatable({}, {__index=function(t,k)
@@ -417,11 +492,13 @@ function Factory.CopyBoxUI(parent)
 	t:SetWidth(270)
 	t:SetPoint("TOP", f.Title, "BOTTOM", 0, -10)
 	t:SetJustifyH("LEFT")
+	t:SetTextColor(0.1, 0.1, 0.1)
 	t:SetText("These adorable rascals are guaranteed to moonfire literally everything around them.");
 	t, f.Intro = f:CreateFontString(nil, "OVERLAY", "GameFontBlackMedium"), t
 	t:SetWidth(270)
 	t:SetJustifyH("LEFT")
 	t:SetText("1. Moonfire.")
+	t:SetTextColor(0.1, 0.1, 0.1)
 	local ub = CreateObject("LockedCopyInputBox", f)
 	ub:SetPoint("TOP",0,-170)
 	ub:SetText("Very moon,")
@@ -439,6 +516,7 @@ function Factory.CopyBoxUI(parent)
 	t:SetJustifyH("LEFT")
 	t:SetPoint("BOTTOM", cb, "TOP", 0, 6)
 	t:SetText("2. Kittens.")
+	t:SetTextColor(0.1, 0.1, 0.1)
 	f.SecondInputBoxLabel = t
 	
 	f:SetScript("OnKeyDown", function(self, key)
@@ -575,6 +653,7 @@ function Factory.MissionButton(parent)
 	t:SetText("Goats' Goat Goat")
 	t:SetPoint("TOP", 0, -54)
 	t:SetWidth(276)
+	t:SetTextColor(0.97, 0.94, 0.70)
 	t, cf.Name = cf:CreateTexture(nil, "BACKGROUND", nil, 2), t
 	t:SetAtlas("Campaign-QuestLog-LoreDivider")
 	local divC = CovenKit == "Kyrian" and 0xfeb0a0 or CovenKit == "Venthyr" and 0xfe40f0 or CovenKit == "Necrolord" and 0xc0fe00 or 0x4080fe
@@ -602,8 +681,8 @@ function Factory.MissionButton(parent)
 		cf.Rewards[j] = rew
 	end
 	t = CreateObject("AchievementRewardIcon", cf)
-		t:SetPoint("RIGHT", cf, "TOPRIGHT", -20, -40)
-		cf.AchievementReward = t
+	t:SetPoint("RIGHT", cf, "TOPRIGHT", -20, -40)
+	cf.AchievementReward = t
 
 	t = CreateFrame("Frame", nil, cf)
 	t:SetPoint("TOP", cf.Name, "BOTTOM", 0, -4)
@@ -662,11 +741,10 @@ function Factory.MissionButton(parent)
 		end
 	end)
 	cf.ViewButton = gb
-	t = cf:CreateTexture(nil, "BACKGROUND", nil, 2)
-	t:SetTexture("Interface/EncounterJournal/UI-EJ-WarningTextIcon")
-	t:SetSize(14, 14)
-	t:SetPoint("TOPLEFT", 14, -36)
-	cf.sciIcon = t
+	t = cf:CreateFontString(nil, "BACKGROUND", "GameFontNormalSmall")
+	t:SetTextColor(0.97, 0.94, 0.70)
+	t:SetPoint("TOPLEFT", 16, -38)
+	cf.TagText = t
 	
 	return cf
 end
@@ -687,6 +765,24 @@ function Factory.RewardFrame(parent)
 	t:SetAtlas("VignetteLoot")
 	f.OvermaxRewardIcon = t
 	f:SetScript("OnClick", CommonLinkable_OnClick)
+	f.SetReward = RewardButton_SetReward
+	return f
+end
+function Factory.InlineRewardBlock(parent)
+	local f, t = CreateFrame("Frame", nil, parent)
+	f:SetSize(140, 28)
+	t = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+	t:SetPoint("LEFT")
+	t:SetText("Rewards:")
+	f.Rewards, f.RewardsLabel = {}, t
+	for i=1,3 do
+		t = CreateObject("RewardFrame", f)
+		t:SetSize(28,28)
+		t:SetPoint("LEFT", f.Rewards[i-1] or f.RewardsLabel, "RIGHT", i == 1 and 12 or 4, 0)
+		t.Quantity:Hide()
+		t.ShowQuantityFromWidgetText = "Quantity"
+		f.Rewards[i] = t
+	end
 	return f
 end
 function Factory.CommonHoverTooltip(frame)
