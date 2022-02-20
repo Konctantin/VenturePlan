@@ -44,6 +44,22 @@ local function GetIncomingAAMask(slot, bm)
 
 	return r
 end
+local function GetFollowerInfo(fid)
+	local fi = C_Garrison.GetFollowerInfo(fid)
+	fi.autoCombatSpells = C_Garrison.GetFollowerAutoCombatSpells(fid, fi.level)
+	fi.autoCombatantStats = C_Garrison.GetFollowerAutoCombatStats(fid)
+	return fi
+end
+local function Board_HasCompanion()
+	local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+	for i=0,4 do
+		local ii = f[i].info
+		if ii and not ii.isAutoTroop then
+			return true
+		end
+	end
+	return false
+end
 local function Puck_OnEnter(self)
 	if not self.name then
 		if GameTooltip:IsOwned(self) then
@@ -110,7 +126,7 @@ local function EnvironmentEffect_OnNameUpdate(self_name)
 	local ee = self_name:GetParent()
 	ee:SetHitRectInsets(0, min(-100, -self_name:GetStringWidth()), 0, 0)
 end
-local GetSim do
+local GetSim, GetGroupData, SetSimResultHint do
 	local simArch, simTag, simHadMS
 	local deadline, rendCooldown, rendCallback, rendOwner
 	function EV:GARRISON_MISSION_NPC_CLOSED()
@@ -134,12 +150,34 @@ local GetSim do
 		htag = tag .. htag
 		return htag, tag
 	end
-	local function GetGroupData()
+	local function cmpBoardIndex(a,b)
+		return a.boardIndex < b.boardIndex
+	end
+	local function GetComputedGroupTags(g)
+		local mi  = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
+		local tag, htag = (mi.missionID) .. ":" .. (mi.missionScalar or 0), ""
+		local m = {}
+		for i=1,#g do
+			m[i] = g[i]
+		end
+		table.sort(m, cmpBoardIndex)
+		for i=1,#m do
+			local ii = m[i]
+			local stats = ii.stats
+			tag = tag .. ":" .. ii.boardIndex .. ":" .. stats.attack .. ":" .. ii.id
+			htag = htag .. ":" .. stats.currentHealth
+		end
+		htag = tag .. htag
+		return htag, tag
+	end
+	function GetGroupData(onlyCompanions)
 		local team, f = {}, CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+		local rewardXP = MissionRewards and MissionRewards.xpGain or 0
 		for i=0,4 do
 			local ii = f[i].info
-			if ii then
-				team[#team+1] = {boardIndex=i, role=ii.role, stats=ii.autoCombatantStats, spells=f[i].autoCombatSpells}
+			if ii and (not onlyCompanions or not ii.isAutoTroop) then
+				local willLevel = not ii.isMaxLevel and not ii.isAutoTroop and ii.xp and ii.levelXP and (ii.xp + rewardXP) >= ii.levelXP
+				team[#team+1] = {boardIndex=i, role=ii.role, stats=ii.autoCombatantStats, spells=f[i].autoCombatSpells, id=ii.followerID, willLevel=willLevel}
 			end
 		end
 		return team
@@ -187,6 +225,190 @@ local GetSim do
 			callback(owner, simArch, simHadMS)
 		end
 		return simArch
+	end
+	function SetSimResultHint(g, sim, ms)
+		simArch, simTag, simHadMS = sim, GetComputedGroupTags(g), ms and next(ms) and true or nil
+	end
+end
+local Tact = {} do
+	local pt, state, deadline = {}
+	local function cmpFollowerID(a,b)
+		return a.followerID < b.followerID
+	end
+	local function GetGroupTags()
+		local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+		local mi  = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
+		local tag, htag = (mi.missionID) .. ":" .. (mi.missionScalar or 0), ""
+		local m = {}
+		for i=0,4 do
+			local ii = f[i].info
+			if ii and not ii.isAutoTroop then
+				m[#m+1] = ii
+			end
+		end
+		table.sort(m, cmpFollowerID)
+		for i=1,#m do
+			local ii = m[i]
+			local stats = ii.autoCombatantStats
+			tag = tag .. ":" .. i .. ":" .. stats.attack .. ":" .. ii.followerID
+			htag = htag .. ":" .. stats.currentHealth
+		end
+		htag = tag .. htag
+		return htag, tag
+	end
+	local function GetShuffleGroup(gid)
+		local rgid, g, um, maxScore, pen = gid, {}, 0, 4, 0
+		for i=0,4 do
+			pt[i] = i
+		end
+		for i=1, #state.companions do
+			local p, li, ci = rgid % (6-i), 5-i, state.companions[i]
+			rgid = (rgid - p) / (6-i)
+			p, pt[li], pt[p] = pt[p], pt[p], pt[li]
+			g[i], ci.boardIndex, um = ci, p, um + 2^p
+			if not ci.willLevel then
+				maxScore = maxScore + 5*ci.stats.maxHealth
+			end
+		end
+		for p=0, 4-#state.companions do
+			p = pt[p]
+			local i = rgid % 3
+			rgid = (rgid - i) / 3
+			local ti = state.troops[i+1]
+			if ti then
+				local nt = {}
+				for k,v in pairs(ti) do
+					nt[k] = v
+				end
+				g[#g+1], nt.boardIndex, pen = nt, p, pen + 1
+			end
+		end
+		return g, maxScore-pen, pen
+	end
+	local function GetHealthScore(rm)
+		local rc, s = state.companions, 0
+		for i=1,#rc do
+			local ci = rc[i]
+			if not ci.willLevel then
+				local mh, eh = ci.stats.maxHealth, rm[ci.boardIndex]
+				s = s + (mh < eh and mh or eh)
+			end
+		end
+		return s*5+4-state.cpenalty
+	end
+	local function interrupt(root, _forkID, _nForks)
+		local res = root.res
+		state.numFutures = state.numFutures + 1
+		if res.hadLosses or debugprofilestop() >= deadline or GetHealthScore(res.min) < state.bestScore then
+			return true
+		end
+	end
+	function Tact:Run()
+		if not state then
+			return true
+		end
+		deadline = debugprofilestop() + 15
+		repeat
+			local sim = state.csim
+			if not sim then
+				local ng = state.nextGroup
+				if ng >= state.numGroups then
+					state.finished = true
+					local g = state.bestGroup and GetShuffleGroup(state.bestGroup)
+					if g then
+						SetSimResultHint(g, state.bestSim, state.bestMiss)
+					end
+					return true, g
+				end
+				local team, maxScore, troopPenalty, ms = GetShuffleGroup(ng)
+				if maxScore > state.bestScore then
+					sim, ms = T.VSim:New(team, state.enemies, state.espell, state.missionID, state.missionScalar)
+					sim.dropForks = true
+					state.csim, state.cmiss, state.cgroup, state.cpenalty = sim, ms, ng, troopPenalty
+					state.numFutures = state.numFutures + 1
+				end
+				state.nextGroup = ng+1
+			end
+			if sim then
+				sim:Run(interrupt)
+				if sim.res.hadLosses then
+					state.csim = nil
+				elseif sim.res.isFinished then
+					local h = GetHealthScore(sim.res.min)
+					if h > state.bestScore then
+						state.bestScore, state.bestGroup, state.bestSim, state.bestMiss = h, state.cgroup, sim, state.cmiss
+					end
+					state.csim = nil
+				end
+			end
+		until debugprofilestop() > deadline
+	end
+	function Tact:Start()
+		if not Board_HasCompanion() then
+			return
+		end
+		local ht, it = GetGroupTags()
+		if state and not (it ~= state.itag or (state.finished and state.htag ~= ht)) then
+			return true
+		end
+		do
+			local mi = CovenantMissionFrame.MissionTab.MissionPage.missionInfo
+			local eei = C_Garrison.GetAutoMissionEnvironmentEffect(mi.missionID)
+			local mdi = C_Garrison.GetMissionDeploymentInfo(mi.missionID)
+			local espell = eei and eei.autoCombatSpellInfo
+			local ct, tt = GetGroupData(true), {}
+			for _, fi in ipairs(C_Garrison.GetAutoTroops(123)) do
+				tt[#tt+1] = {
+					role=fi.role,
+					stats=C_Garrison.GetFollowerAutoCombatStats(fi.followerID),
+					spells=C_Garrison.GetFollowerAutoCombatSpells(fi.followerID, fi.level),
+					id=fi.followerID,
+				}
+			end
+			local ng = 3^(5-#ct)
+			for i=1,#ct do
+				ng = ng * (6-i)
+			end
+			state = {
+				companions=ct, troops=tt,
+				espell=espell, enemies=mdi.enemies, missionID=mi.missionID, missionScalar=mi.missionScalar,
+				numGroups=ng, nextGroup=0, bestGroup=false, bestScore = -1e12
+			}
+		end
+		state.numFutures, state.htag, state.itag = 0, ht, it
+		return true
+	end
+	function Tact:IsRunning()
+		if state and not state.finished then
+			return true, state.nextGroup, state.numGroups, state.numFutures, not not state.bestGroup
+		elseif state and GetGroupTags() == state.htag then
+			return false, true, not not state.bestGroup
+		else
+			return false, false, Board_HasCompanion()
+		end
+	end
+	function Tact:Interrupt()
+		if state and state.bestGroup then
+			local g = GetShuffleGroup(state.bestGroup)
+			SetSimResultHint(g, state.bestSim, state.bestMiss)
+			return g
+		end
+	end
+	function Tact:CheckBoard(later)
+		if later then
+			if not Tact.pendingBoardCheck then
+				C_Timer.After(0, Tact.CheckBoard)
+			end
+			Tact.pendingBoardCheck = true
+			return
+		end
+		Tact.pendingBoardCheck = nil
+		if state and not state.finished and state.itag ~= select(2, GetGroupTags()) then
+			state = nil
+		end
+	end
+	function Tact:Reset()
+		state = nil
 	end
 end
 local function Predictor_OnEnter(self)
@@ -288,6 +510,7 @@ local function Predictor_OnLeave(self)
 	end
 end
 local function MissionGroup_OnUpdate()
+	Tact:CheckBoard(true)
 	local o = GameTooltip:IsVisible() and GameTooltip:GetOwner() or GetMouseFocus()
 	if o and not o:IsForbidden() and o:GetScript("OnEnter") and o:GetParent():GetParent() == CovenantMissionFrame.MissionTab.MissionPage.Board then
 		o:GetScript("OnEnter")(o)
@@ -332,6 +555,9 @@ local function MissionView_OnHide()
 	CovenantMissionFrameFollowers.HealAllButton:SetParent(CovenantMissionFrameFollowers)
 end
 local function Mission_StoreTentativeGroup()
+	if IsAltKeyDown() then
+		return
+	end
 	local g, hc = {}, false
 	local mid = CovenantMissionFrame.MissionTab.MissionPage.missionInfo.missionID
 	local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
@@ -344,6 +570,75 @@ local function Mission_StoreTentativeGroup()
 	if hc then
 		U.StoreMissionGroup(mid, g, true)
 	end
+end
+local function Shuffler_OnEnter(self)
+	GameTooltip:Hide()
+	GameTooltip:SetOwner(self, "ANCHOR_TOP")
+	GameTooltip:SetText(ITEM_QUALITY_COLORS[5].hex .. L"Cursed Tactical Guide")
+	local isRunning, a1, a2, a3, a4 = Tact:IsRunning()
+	if isRunning then
+		local nc = NORMAL_FONT_COLOR
+		GameTooltip:AddDoubleLine(L"Futures considered:", a3, 1,1,1, nc.r, nc.g, nc.b)
+		if a4 then
+			GameTooltip:AddLine(L"Use: Interrupt the guide's deliberations.", 0, 1, 0, 1)
+		end
+		T.CreateObject("SharedTooltipProgressBar"):Activate(GameTooltip, a1, a2)
+		return
+	elseif a1 and not a2 then -- finished, no group
+		GameTooltip:AddLine(L"Victory could not be guaranteed.", 1,1,1)
+	else -- not running, not finished
+		GameTooltip:AddLine(ITEM_UNIQUE, 1,1,1, 1)
+		GameTooltip:AddLine(L"Use: Let the book select troops and battle tactics.", 0, 1, 0, 1)
+		local c = a2 and WHITE_FONT_COLOR or RED_FONT_COLOR -- can start?
+		GameTooltip:AddLine(L"Requires a companion in the party", c.r, c.g, c.b)
+		GameTooltip:AddLine(L'"Chapter 1: Mages Must Melee."', 1, 0.835, 0.09, 1)
+	end
+	GameTooltip:Show()
+end
+local function Shuffler_OnLeave(self)
+	if GameTooltip:IsOwned(self) then
+		GameTooltip:Hide()
+	end
+end
+local function Shuffler_AssignGroup(g)
+	local f = CovenantMissionFrame.MissionTab.MissionPage.Board.framesByBoardIndex
+	for i=0,4 do
+		if f[i].info then
+			CovenantMissionFrame:RemoveFollowerFromMission(f[i], true)
+		end
+	end
+	for i=1,#g do
+		CovenantMissionFrame:AssignFollowerToMission(f[g[i].boardIndex], GetFollowerInfo(g[i].id))
+	end
+end
+local function Shuffler_OnUpdate(self)
+	local fin, g = Tact:Run()
+	if fin then
+		self:SetScript("OnUpdate", nil)
+		if g then
+			Shuffler_OnLeave(self)
+			return Shuffler_AssignGroup(g)
+		end
+	end
+	if GameTooltip:IsOwned(self) then
+		Shuffler_OnEnter(self)
+	end
+end
+local function Shuffler_OnClick(self)
+	local ir, _, _, hg = Tact:IsRunning()
+	if ir then
+		local g = hg and Tact:Interrupt()
+		if g then
+			Shuffler_AssignGroup(g)
+		end
+	elseif Tact:Start() then
+		self:SetScript("OnUpdate", Shuffler_OnUpdate)
+		Shuffler_OnUpdate(self)
+	end
+	PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+end
+local function Shuffler_OnHide()
+	Tact:Reset()
 end
 
 function EV:I_ADVENTURES_UI_LOADED()
@@ -363,20 +658,17 @@ function EV:I_ADVENTURES_UI_LOADED()
 			self:Click()
 		end
 	end)
-	local mb = CreateFrame("Button", nil, MP.Board)
-	mb:SetSize(64,64)
-	mb:SetPoint("BOTTOMLEFT", 24, 8)
-	mb:SetNormalTexture("Interface/Icons/INV_Misc_Book_01")
-	mb:SetHighlightTexture("Interface/Buttons/ButtonHilight-Square")
-	mb:GetHighlightTexture():SetBlendMode("ADD")
-	mb:SetPushedTexture("Interface/Buttons/UI-Quickslot-Depress")
-	mb:GetPushedTexture():SetDrawLayer("OVERLAY")
-	local t = mb:CreateTexture(nil, "ARTWORK")
-	t:SetAllPoints()
-	t:SetTexture("Interface/Icons/INV_Misc_Book_01")
-	mb:SetScript("OnEnter", Predictor_OnEnter)
-	mb:SetScript("OnLeave", Predictor_OnLeave)
-	mb:SetScript("OnClick", Predictor_OnClick)
+	local cag = T.CreateObject("IconButton", MP.Board, 64, "Interface/Icons/INV_Misc_Book_01")
+	cag:SetPoint("BOTTOMLEFT", 24, 4)
+	cag:SetScript("OnEnter", Predictor_OnEnter)
+	cag:SetScript("OnLeave", Predictor_OnLeave)
+	cag:SetScript("OnClick", Predictor_OnClick)
+	local cat = T.CreateObject("IconButton", MP.Board, 32, "Interface/Icons/INV_Misc_Book_06")
+	cat:SetPoint("TOPLEFT", cag, "TOPRIGHT", 4, 0)
+	cat:SetScript("OnEnter", Shuffler_OnEnter)
+	cat:SetScript("OnLeave", Shuffler_OnLeave)
+	cat:SetScript("OnClick", Shuffler_OnClick)
+	cat:SetScript("OnHide", Shuffler_OnHide)
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnEnter", EnvironmentEffect_OnEnter)
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnLeave", EnvironmentEffect_OnLeave)
 	hooksecurefunc(MP.Stage.EnvironmentEffectFrame.Name, "SetText", EnvironmentEffect_OnNameUpdate)

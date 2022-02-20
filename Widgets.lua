@@ -2,7 +2,7 @@ local Factory, AN, T = {}, ...
 local C, EV, L, U = C_Garrison, T.Evie, T.L, T.Util
 local PROGRESS_MIN_STEP = 0.2
 local CovenKit = "NightFae"
-local currencyMeterFrame, tooltipShopWatch
+local tooltipSharedPB, tooltipShopWatch
 
 local function CreateObject(otype, ...)
 	return assert(Factory[otype], otype)(...)
@@ -124,8 +124,23 @@ local function CommonTooltip_OnEnter(self)
 	end
 	GameTooltip:Show()
 	if showCurrencyBar then
-		currencyMeterFrame = currencyMeterFrame or CreateObject("CurrencyMeter")
-		currencyMeterFrame:Activate(GameTooltip, self.currencyID, self.currencyQ)
+		local q1, factionID, cur, max, label = self.currencyQ, C_CurrencyInfo.GetFactionGrantedByCurrency(self.currencyID)
+		if factionID then
+			if C_Reputation.IsFactionParagon(factionID) then
+				label, cur, max = _G["FACTION_STANDING_LABEL8" .. (UnitSex("player") ~= 2 and "_FEMALE" or "")], C_Reputation.GetFactionParagonInfo(factionID)
+				cur = cur % max
+			else
+				local _, _, stID, bMin, bMax, bVal  = GetFactionInfoByID(factionID)
+				if stID and bMin then
+					cur, max, label = bVal - bMin, bMax-bMin, _G["FACTION_STANDING_LABEL" .. stID .. (UnitSex("player") ~= 2 and "_FEMALE" or "")]
+				end
+			end
+		end
+		if not (cur and max) then
+			return
+		end
+		label = label .. " - " .. BreakUpLargeNumbers(cur) .. " / " .. BreakUpLargeNumbers(max)
+		CreateObject("SharedTooltipProgressBar"):Activate(GameTooltip, cur, max, label, q1)
 	end
 end
 local function CommonLinkable_OnClick(self)
@@ -216,7 +231,7 @@ local function Progress_SetTimer(self, endTime, duration, endText, endMotion, sh
 	self:SetScript("OnUpdate", Progress_UpdateTimer)
 	Progress_UpdateTimer(self)
 end
-local function CurrencyMeter_Update(self)
+local function TooltipProgressBar_Update(self)
 	local p = self:GetParent()
 	local pt, sb, pw = p:GetTop(), self:GetBottom(), p:GetWidth()
 	if pt and sb then
@@ -228,23 +243,10 @@ local function CurrencyMeter_Update(self)
 	self.Bar:SetProgress(self.pv)
 	self.Fill2:SetWidth(self.Bar:GetWidth()*self.v2)
 end
-local function CurrencyMeter_Activate(self, tip, currencyID, q1)
-	local factionID, cur, max, label = C_CurrencyInfo.GetFactionGrantedByCurrency(currencyID)
-	if factionID then
-		if C_Reputation.IsFactionParagon(factionID) then
-			label, cur, max = _G["FACTION_STANDING_LABEL8" .. (UnitSex("player") ~= 2 and "_FEMALE" or "")], C_Reputation.GetFactionParagonInfo(factionID)
-			cur = cur % max
-		else
-			local _, _, stID, bMin, bMax, bVal  = GetFactionInfoByID(factionID)
-			if stID and bMin then
-				cur, max, label = bVal - bMin, bMax-bMin, _G["FACTION_STANDING_LABEL" .. stID .. (UnitSex("player") ~= 2 and "_FEMALE" or "")]
-			end
-		end
-	end
+local function TooltipProgressBar_Activate(self, tip, cur, max, label, q1)
 	if not (cur and max) then
 		return
 	end
-	label = label .. " - " .. BreakUpLargeNumbers(cur) .. " / " .. BreakUpLargeNumbers(max)
 	self.pv = cur/max
 	self.v2 = math.max(0.00001, math.min(1-self.pv, (q1 or 0)/max))
 	self.Bar.Text:SetText(label)
@@ -254,9 +256,9 @@ local function CurrencyMeter_Activate(self, tip, currencyID, q1)
 	self:SetPoint("TOPLEFT", lastLine, "BOTTOMLEFT", 0, -2)
 	self:Show()
 	tip:Show()
-	CurrencyMeter_Update(self)
+	TooltipProgressBar_Update(self)
 end
-local function CurrencyMeter_OnHide(self)
+local function TooltipProgressBar_OnHide(self)
 	self:Hide()
 	self:SetParent(nil)
 	self:ClearAllPoints()
@@ -651,15 +653,15 @@ local function FollowerList_OnUpdate(self)
 	end
 end
 local function DoomRun_OnEnter(self)
-	local ft, g = C_Garrison.GetFollowers(123), {}
+	local ft, g, gn = C_Garrison.GetFollowers(123), {}, 0
 	EV("I_MARK_FALSESTART_FOLLOWERS", ft)
 	SortFollowerList(ft, true)
 	local getACS = C_Garrison.GetFollowerAutoCombatStats
 	for i=#ft,1,-1 do
 		local fi = ft[i]
 		if fi.isCollected and not fi.isMaxLevel and fi.status ~= GARRISON_FOLLOWER_ON_MISSION and not U.FollowerHasTentativeGroup(fi.followerID) and getACS(fi.followerID).currentHealth > 0 then
-			g[#g+1] = i
-			if #g == 5 then
+			g[gn], gn = i, gn + 1
+			if gn == 5 then
 				break
 			end
 		end
@@ -669,9 +671,9 @@ local function DoomRun_OnEnter(self)
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	GameTooltip:SetText(L"Doomed Run")
 	GameTooltip:AddLine(L("Failing this mission grants %s to each companion."):format(xpT), 1,1,1,1)
-	if #g > 0 then
+	if gn > 0 then
 		GameTooltip:AddLine(" ")
-		for i=1,#g do
+		for i=0, gn-1 do
 			local fi = ft[g[i]]
 			local willLevelUp = fi.levelXP and fi.xp and fi.levelXP - fi.xp <= xpR or false
 			local upTex = willLevelUp and " |A:bags-greenarrow:0:0|a" or ""
@@ -679,19 +681,23 @@ local function DoomRun_OnEnter(self)
 			g[i] = fi.followerID
 		end
 		GameTooltip:AddLine(L"Tentatively assign these rookies to this adventure.", 0.2,1,0.2, 1)
+		GameTooltip:AddLine("|TInterface/TUTORIALFRAME/UI-TUTORIAL-FRAME:14:12:0:-1:512:512:10:70:330:410|t " .. L"Start the adventure", 0.5, 0.8, 1)
 	end
-	self.group = g
+	self.group = gn > 0 and g or nil
 	GameTooltip:Show()
 end
-local function DoomRun_OnClick(self)
+local function DoomRun_OnClick(self, button)
 	local mid = self:GetParent().missionID
 	local g = self.group
-	if not (mid and g and #g > 0) then return end
+	if not (mid and g) then return end
 	if GameTooltip:IsOwned(self) then
 		GameTooltip:Hide()
 	end
 	U.StoreMissionGroup(mid, g)
 	PlaySound(SOUNDKIT.U_CHAT_SCROLL_BUTTON)
+	if button == "RightButton" then
+		U.SendMissionGroup(mid, g)
+	end
 	EV("I_MISSION_LIST_UPDATE")
 end
 local function TentativeGroupClear_OnClick(self)
@@ -724,6 +730,7 @@ local function UButton_Sync(self)
 		self.mode = nil
 		self:Hide()
 	end
+	self.clickKey = self.mode ~= "start-send" and "SPACE" or nil
 	if GameTooltip:IsOwned(self) then
 		local oe = self:GetScript("OnEnter")
 		if not self:IsVisible() then
@@ -837,8 +844,9 @@ local function MissionPage_AcquireToast(self)
 	return toast
 end
 local function ClickWithSpace(self, button)
-	self:SetPropagateKeyboardInput(button ~= "SPACE")
-	if button == "SPACE" then
+	local click = button and button == self.clickKey
+	self:SetPropagateKeyboardInput(not click)
+	if click then
 		self:Click()
 	end
 end
@@ -1234,6 +1242,7 @@ function Factory.MissionButton(parent)
 	t:SetSize(24,21)
 	t:SetText("|TInterface/EncounterJournal/UI-EJ-HeroicTextIcon:0|t")
 	t:SetPushedTextOffset(-1, -1)
+	t:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	t:SetScript("OnEnter", DoomRun_OnEnter)
 	t:SetScript("OnLeave", HideOwnGameTooltip)
 	t:SetScript("OnClick", DoomRun_OnClick)
@@ -1449,7 +1458,7 @@ function Factory.ProgressBar(parent)
 	f.SetProgressCountdown = Progress_SetTimer
 	return f
 end
-function Factory.CurrencyMeter()
+function Factory.TooltipProgressBar()
 	local f, t = CreateFrame("Frame")
 	f:SetSize(180, 30)
 	f:Hide()
@@ -1463,9 +1472,9 @@ function Factory.CurrencyMeter()
 	t:SetPoint("TOPLEFT", f.Bar.Fill, "TOPRIGHT")
 	t:SetPoint("BOTTOMLEFT", f.Bar.Fill, "BOTTOMRIGHT")
 	t:SetWidth(50)
-	f.Activate, f.Fill2 = CurrencyMeter_Activate, t
-	f:SetScript("OnHide", CurrencyMeter_OnHide)
-	f:SetScript("OnUpdate", CurrencyMeter_Update)
+	f.Activate, f.Fill2 = TooltipProgressBar_Activate, t
+	f:SetScript("OnHide", TooltipProgressBar_OnHide)
+	f:SetScript("OnUpdate", TooltipProgressBar_Update)
 	return f
 end
 function Factory.ControlContainerBorder(parent, expandX, expandY)
@@ -1780,4 +1789,22 @@ function Factory.MissionToast(parent)
 	f.Background[#f.Background+1], f.IconBorder = t, t
 	f:Hide()
 	return f
+end
+function Factory.IconButton(parent, sz, tex)
+	local mb = CreateFrame("Button", nil, parent)
+	mb:SetSize(sz, sz)
+	mb:SetNormalTexture(tex or "Interface/Icons/Temp")
+	mb:SetHighlightTexture("Interface/Buttons/ButtonHilight-Square")
+	mb:GetHighlightTexture():SetBlendMode("ADD")
+	mb:SetPushedTexture("Interface/Buttons/UI-Quickslot-Depress")
+	mb:GetPushedTexture():SetDrawLayer("OVERLAY")
+	local t = mb:CreateTexture(nil, "ARTWORK")
+	t:SetAllPoints()
+	t:SetTexture(tex or "Interface/Icons/Temp")
+	mb.Icon = t
+	return mb
+end
+function Factory.SharedTooltipProgressBar()
+	tooltipSharedPB = tooltipSharedPB or CreateObject("TooltipProgressBar")
+	return tooltipSharedPB
 end

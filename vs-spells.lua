@@ -312,4 +312,21 @@ T.KnownSpells = {
 	[238]={type="taunt", target="all-enemies", duration=2},
 	[239]={type="nuke", target="enemy-back", damageATK=50},
 	[240]={type="nuke", target=0, damageATK=25},
+	[16]={type="nuke", target=1, damageATK=75},
+	[59]={type="nuke", target="enemy-back", damageATK=50},
+	[74]={type="aura", target=4, duration=3, modDamageTaken=-40, modDamageDealt=-40},
+	[81]={type="aura", target=4, duration=3, thornsATK=100},
+	[93]={
+		{type="nuke", target=0, damageATK=20},
+		{type="heal", target=4, healATK=80},
+	},
+	[101]={type="aura", target=0, damageATK1=60, duration=3, modDamageTaken=20},
+	[191]={
+		{type="nuke", target="all-enemies", damageATK=100},
+		{type="heal", target="all-allies", healATK=100},
+	},
+	[194]={
+		{type="aura", target=3, duration=2, plusDamageDealtATK=40, modDamageTaken=-20},
+		{type="nuke", target=4, damageATK=20},
+	},
 }
