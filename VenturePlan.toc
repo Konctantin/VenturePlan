@@ -16,6 +16,8 @@
 ## License: All rights reserved. Do not modify or redistribute.
 ## X-Website: https://www.townlong-yak.com/addons/venture-plan
 ## SavedVariablesPerCharacter: VP_SPC
+## SavedVariables: VP_MissionReports
+
 Libs/Evie.lua
 Locale.lua
 Util.lua
