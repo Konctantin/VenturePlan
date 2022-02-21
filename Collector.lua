@@ -102,11 +102,14 @@ local function isNovelLog(cr, checkpoints)
 	local ok, ret, ret2 = pcall(checkSim, cr, checkpoints)
 	return not (ok and ret), ok, ret2
 end
+local missionIdx = 1
 function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _followerDeaths, autoCombatResult)
 	if not (autoCombatResult and autoCombatResult.combatLog and mid and C_Garrison.GetFollowerTypeByMissionID(mid) == 123) then return end
 	local cr = {
 		log=autoCombatResult.combatLog, winner=autoCombatResult.winner, missionID=mid,
 	}
+	cr.id = tostring(time())..string.format("%04d",missionIdx);
+	missionIdx = missionIdx + 1;
 	cr.encounters = C_Garrison.GetMissionCompleteEncounters(mid)
 	cr.environment = C_Garrison.GetAutoMissionEnvironmentEffect(mid)
 	for _, v in pairs(cr.encounters) do
@@ -140,6 +143,17 @@ function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _fo
 	cr.followers = fm
 	cr.missionScalar = mi.missionScalar
 	cr.missionName = mi.name
+
+	if not VP_MissionReports then
+		VP_MissionReports = {};
+	end
+
+	while (#VP_MissionReports > 300) do
+		table.remove(VP_MissionReports, 1);
+	end
+
+	table.insert(VP_MissionReports, cr);
+
 	local ok, checkpoints = generateCheckpoints(cr)
 	if ok then
 		local novel, nok, om = isNovelLog(cr, checkpoints)
