@@ -424,4 +424,25 @@ T.KnownSpells = {
     }, --Anima Shatter (UNVERIFIED)
     [324]={type="heal", target="friend-surround", healATK=120}, --Protective Parasol (UNVERIFIED)
     [340]={type="nuke", target=1, damageATK=60}, --Tainted Bite (UNVERIFIED)
+
+    -- 9.2
+    [357] = {type="aura", target=0, duration=0, modDamageDealt=-50},
+    [358] = {type="nuke", target="enemy-front", firstTurn=5, damageATK=400},
+    [359] = {type="aura", target=1, duration=3, noFirstTick=false, damageATK=50}, -- ??
+    [360] = {type="nuke", target="enemy-front", damageATK=50},
+    [361] = {type="nuke", target="enemy-front", damageATK=75},
+    [362] = {type="nuke", target=1, damageATK=120},
+    [363] = {type="aura", target="friend-front-soft", duration=1, modDamageDealt=10}, --???
+    [364] = {type="taunt", target="all-enemies", duration=2},
+    [365] = {type="aura", target=0, duration=1, modDamageTaken=50},
+    [366] = {type="nuke", target="enemy-front", damageATK=50},
+    [367] = {type="nuke", target="cone", damageATK=75},
+    [368] = {type="nuke", target=1, damageATK=60},
+    [369] = {type="nuke", target="all-enemies", duration=2, damageATK=100}, -- ??
+    [370] = {type="aura", target="all-enemies", duration=2, modDamageDealt=-75},
+    [371] = {type="aura", target=1, duration=3, damageATK=100}, -- ??
+    [372] = {type="nuke", target=1, damageATK=150},
+    [373] = {type="nuke", target=1, damageATK=100, selfhealATK=100},
+    [374] = {type="nuke", target=1, damageATK=100, selfhealATK=40},
+    [375] = {type="aura", target="all-enemies", duration=2, modDamageDealt=-20},
 }
