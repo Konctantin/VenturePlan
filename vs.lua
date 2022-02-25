@@ -465,15 +465,15 @@ do -- targets
     -- [FirstSpellID] = R (range spell id)
     local followers = { [14]=M, [45]=M, [85]=M, [194]=M, [303]=M, [306]=M, [309]=M, [314]=M, [325]=M };
 
-	function VS:GetAutoAttack(role, boardIndex, missionId, firstSpell)
+    function VS:GetAutoAttack(role, boardIndex, missionId, firstSpell)
         local attackSpellId = (role == 1 or role == 5) and M or R;
         if (boardIndex or 0) > 4 and missionId then
             attackSpellId = enemies[boardIndex] and enemies[boardIndex][missionId] or attackSpellId;
         elseif firstSpell then
             attackSpellId = followers[firstSpell] or attackSpellId;
-		end
+        end
         return attackSpellId;
-	end
+    end
 
 	VS.GetTargets = GetTargets
 	VS.targetLists = targetLists
