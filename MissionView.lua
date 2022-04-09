@@ -293,6 +293,7 @@ local CAG, SetSimResultHint = {} do
 	end
 	EV.GARRISON_MISSION_NPC_CLOSED = CAG.Reset
 end
+
 local Tact = {} do
 	local pt, state, deadline = {}
 	local function cmpFollowerID(a,b)
@@ -471,6 +472,7 @@ local Tact = {} do
 		state = nil
 	end
 end
+
 local function Predictor_OnEnter(self)
 	GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
 	GameTooltip:SetText(ITEM_QUALITY_COLORS[5].hex .. L"Cursed Adventurer's Guide")
@@ -479,6 +481,7 @@ local function Predictor_OnEnter(self)
 	GameTooltip:AddLine(L'"Do not believe its lies! Balance druids are not emergency rations."', 1, 0.835, 0.09, 1)
 	GameTooltip:Show()
 end
+
 local function Predictor_ShowResult(self, sim, incompleteModel, recoverUntil, recoverFutures, recoverHighBound)
 	GameTooltip:SetOwner(self, "ANCHOR_TOPLEFT")
 	local res = sim.res
@@ -846,12 +849,14 @@ function EV:I_ADVENTURES_UI_LOADED()
 			self:Click()
 		end
 	end)
+
 	local cag = T.CreateObject("IconButton", MP.Board, 64, "Interface/Icons/INV_Misc_Book_01")
 	cag:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	cag:SetPoint("BOTTOMLEFT", 24, 4)
 	cag:SetScript("OnEnter", Predictor_OnEnter)
 	cag:SetScript("OnLeave", Predictor_OnLeave)
 	cag:SetScript("OnClick", Predictor_OnClick)
+
 	local cat = T.CreateObject("IconButton", MP.Board, 32, "Interface/Icons/INV_Misc_Book_06")
 	cat:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	cat:SetPoint("TOPLEFT", cag, "TOPRIGHT", 4, 0)
@@ -859,6 +864,7 @@ function EV:I_ADVENTURES_UI_LOADED()
 	cat:SetScript("OnLeave", Shuffler_OnLeave)
 	cat:SetScript("OnClick", Shuffler_OnClick)
 	cat:SetScript("OnHide", Shuffler_OnHide)
+
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnEnter", EnvironmentEffect_OnEnter)
 	MP.Stage.EnvironmentEffectFrame:SetScript("OnLeave", EnvironmentEffect_OnLeave)
 	hooksecurefunc(MP.Stage.EnvironmentEffectFrame.Name, "SetText", EnvironmentEffect_OnNameUpdate)

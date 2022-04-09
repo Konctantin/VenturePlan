@@ -242,7 +242,8 @@ local function MissionButton_OnViewClick(self)
 	U.ShowMission(S[self:GetParent()].missionID, self:GetParent():GetParent():GetParent():GetParent())
 end
 local function MissionButton_SetGroupPortraits(mb, g, isVeiled, altWidget)
-	local hasGroup = g and next(g) ~= nil or false
+	--local hasGroup = g and next(g) ~= nil or false
+	local hasGroup = false
 	mb.Group:SetShown(hasGroup)
 	altWidget:SetShown(not hasGroup)
 	local s = S[mb.Group]
@@ -1304,6 +1305,7 @@ function Factory.MissionPage(parent)
 	s.AcquireToast = MissionPage_AcquireToast
 	return s
 end
+
 function Factory.MissionList(parent)
 	local coven = C_Covenants.GetCovenantData(C_Covenants.GetActiveCovenantID() or 1)
 	CovenKit = coven and coven.textureKit or "NightFae"
@@ -1315,6 +1317,7 @@ function Factory.MissionList(parent)
 	missionList:EnableMouseWheel(true)
 	missionList.ScrollToward = MissionList_ScrollToward
 	CreateObject("RaisedBorder", missionList)
+
 	do -- missionList:OnMouseWheel
 		local v = CreateFrame("Frame", nil, parent)
 		v:SetAllPoints(missionList)
@@ -1345,7 +1348,7 @@ function Factory.MissionList(parent)
 		local function onMouseWheel(self, d)
 			local se, y = S[self], select(5, self:GetScrollChild():GetPoint())
 			local snap = math.min(math.max(0, (se.scrollSnap or 0) - d), math.floor(((se.numMissions or 0)-1)/3)-1)
-			local dy = snap == 0 and 0 or (195*snap-30)
+			local dy = snap == 0 and 0 or (129*snap-30)
 			if se.scrollEnd ~= dy then
 				local ct = GetTime()
 				se.scrollSnap, se.scrollStart, se.scrollEnd, se.scrollTimeStart, se.scrollTimeEnd = snap, y, dy, ct, ct + 0.20
@@ -1379,10 +1382,10 @@ function Factory.MissionList(parent)
 	scrollChild:SetSize(902,missionList:GetHeight())
 	missionList:SetScrollChild(scrollChild)
 	s.Missions = setmetatable({}, {__index=MissionList_SpawnMissionButton, __metatable=false})
-	for i=1,6 do
+	for i=1,24 do
 		local cf = CreateObject("MissionButton", scrollChild)
 		s.Missions[i] = cf
-		cf:SetPoint("TOPLEFT", 292*(((i-1)%3)+1)-284, math.floor((i-1)/3) *- 195)
+		cf:SetPoint("TOPLEFT", 292*(((i-1)%3)+1)-284, math.floor((i-1)/3) *- 129)
 	end
 
 	return s
@@ -1390,7 +1393,7 @@ end
 function Factory.MissionButton(parent)
 	local cf, t = CreateFrame("Button", nil, parent)
 	local s = CreateObject("Shadow", cf)
-	cf:SetSize(290, 196)
+	cf:SetSize(290, 130)
 	cf:SetScript("OnClick", MissionButton_OnClick)
 	t = cf:CreateTexture(nil, "BACKGROUND", nil, -2)
 	t:SetAtlas("UI-Frame-"..CovenKit.."-CardParchmentWider")

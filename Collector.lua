@@ -123,7 +123,7 @@ function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _fo
 		local s = cr.environment.autoCombatSpellInfo
 		s.previewMask, s.schoolMask, s.icon, s.spellTutorialFlag = nil
 	end
-	
+
 	local fm, mi = {}, GetCompletedMissionInfo(mid)
 	for i=1,#mi.followers do
 		local fid = mi.followers[i]
@@ -142,16 +142,6 @@ function EV:GARRISON_MISSION_COMPLETE_RESPONSE(mid, _canCom, _suc, _bonusOK, _fo
 	cr.followers = fm
 	cr.missionScalar = mi.missionScalar
 	cr.missionName = mi.name
-
-	if not VP_MissionReports then
-		VP_MissionReports = {};
-	end
-
-	while (#VP_MissionReports > 300) do
-		table.remove(VP_MissionReports, 1);
-	end
-
-	table.insert(VP_MissionReports, cr);
 
 	local ok, checkpoints = generateCheckpoints(cr)
 	if ok then

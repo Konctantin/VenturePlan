@@ -6,7 +6,7 @@ T.KnownSpells = {
 	[89]={type="aura", target=1, duration=3, damageATK=40, nore=true},
 	[96]={type="aura", target=1, duration=2, damageATK1=60, modDamageDealt=-30},
 	[138]={type="nuke", target="cleave", damageATK=30},
-	[200]={type="aura", target=0, damageATK=100, modDamageDealt=-50, duration=1},
+	[200]={type="aura", target="enemy-front", damageATK=100, modDamageDealt=-50, duration=1},
 	[143]={type="aura", target=4, modDamageDealt=25, duration=2},
 	[144]={type="aura", target="all-other-allies", modDamageTaken=-75, duration=2, firstTurn=4},
 	[71]={type="heal", target=3, healATK=100},
@@ -440,32 +440,36 @@ T.KnownSpells = {
     [293] = nil,
 
     -- 9.2
-    [350] = {type="nuke", target="cleave", damageATK=25},
-    [351] = {type="nuke", target=1, damageATK=75, firstTurn=4},
-    --[352] = {type="aura", target=4, modDamageTakenATK=-30, duration=2}, -- atk ???
-    [353] = {type="aura", target=1, duration=0, modDamageDealt=-20},
-    [354] = {type="nuke", target="enemy-front", firstTurn=5, damageATK=400},
-    [355] = {type="aura", target=1, duration=0, modDamageDealt=-25},
-    [356] = {type="nuke", target=1, damageATK=200},
-    [357] = {type="aura", target=0, duration=0, modDamageDealt=-50},
-    [358] = {type="nuke", target="enemy-front", firstTurn=5, damageATK=400},
-    [359] = {type="aura", target=1, duration=3, noFirstTick=false, damageATK=50}, -- ??
-    [360] = {type="nuke", target="enemy-front", damageATK=50},
-    [361] = {type="nuke", target="enemy-front", damageATK=75},
-    [362] = {type="nuke", target=1, damageATK=120},
-    [363] = {type="aura", target="friend-front-soft", duration=1, modDamageDealt=10}, --???
+    [350] = {type="nuke", damageATK=25, target="cleave"},
+    [351] = {type="nuke", damageATK=75, target=1, firstTurn=4},
+    [352] = {type="nop"},
+    [353] = {type="nop"},
+    [354] = {type="nuke", damageATK=400, target="enemy-front", firstTurn=5},
+    [355] = {type="passive", modDamageDealt=-25, target=1},
+    [356] = {type="nuke", damageATK=100, target=1},
+    [357] = {type="passive", modDamageDealt=-50, target=0},
+    [358] = {type="nuke", damageATK=400, target="enemy-front", firstTurn=5},
+    [359] = {type="aura", damageATK=50, target=1, duration=0, noFirstTick=true, echo=3},
+    [360] = {type="nuke", damageATK=50, target="enemy-front"},
+    [361] = {type="nuke", damageATK=75, target="enemy-front"},
+    [362] = {type="nuke", damageATK=120, target=1},
+    [363] = {type="aura", modDamageDealt=10, target="friend-front-soft", duration=2},
     [364] = {type="taunt", target="all-enemies", duration=2},
-    [365] = {type="aura", target=0, duration=1, modDamageTaken=50},
-    [366] = {type="nuke", target="enemy-front", damageATK=50},
-    [367] = {type="nuke", target="cone", damageATK=75},
-    [368] = {type="nuke", target=1, damageATK=60},
-    [369] = {type="nuke", target="all-enemies", duration=2, damageATK=100}, -- ??
-    [370] = {type="aura", target="all-enemies", duration=2, modDamageDealt=-75},
-    [371] = {type="aura", target=1, duration=3, damageATK=100}, -- ??
-    [372] = {type="nuke", target=1, damageATK=150},
-    [373] = {type="nuke", target=1, damageATK=100, selfhealATK=100},
+    [365] = {type="aura", modDamageTaken=50, target=0, duration=1},
+    [366] = {type="nuke", damageATK=50, target="enemy-front"},
+    [367] = {type="nuke", damageATK=75, target="cone"},
+    [368] = {type="nuke", damageATK=60, target=1},
+    [369] = {
+        {type="nop"},
+        {type="aura", damageATK=50, target="all-enemies", duration=0, noFirstTick=true, echo=2},
+	},
+    [370] = {type="aura", modDamageDealt=-50, target="all-enemies", duration=2},
+    [371] = {type="aura", modDamageTaken=-25, target="all-other-allies", duration=2},
+    [372] = {type="nuke", damageATK=40, target="enemy-front"},
+    [373] = {
+        {type="nuke", damageATK=100, target=1},
+        {type="heal", healATK=100, target=4},
+	},
     [374] = {type="nuke", target=1, damageATK=100, selfhealATK=40},
     [375] = {type="aura", target="all-enemies", duration=2, modDamageDealt=-20},
-
-
 }

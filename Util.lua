@@ -680,7 +680,7 @@ function U.SetFollowerInfo(GameTooltip, info, autoCombatSpells, autoCombatantSta
 		mhp, hp, atk = autoCombatantStats.maxHealth, autoCombatantStats.currentHealth, autoCombatantStats.attack
 		aat = T.VSim:GetAutoAttack(role, boardIndex, mid, s1 and s1.autoCombatSpellID)
 	end
-	
+
 	GameTooltip:ClearLines()
 	GameTooltip:AddDoubleLine(info.name, level or "")
 
@@ -858,4 +858,46 @@ function EV:I_OBSERVE_AVAIL_MISSIONS(ma)
 			break
 		end
 	end
+end
+
+-- UTF-8 Reference:
+-- 0xxxxxxx - 1 byte UTF-8 codepoint (ASCII character)
+-- 110yyyxx - First byte of a 2 byte UTF-8 codepoint
+-- 1110yyyy - First byte of a 3 byte UTF-8 codepoint
+-- 11110zzz - First byte of a 4 byte UTF-8 codepoint
+-- 10xxxxxx - Inner byte of a multi-byte UTF-8 codepoint
+local function chsize(char)
+    if not char then
+        return 0
+    elseif char > 240 then
+        return 4
+    elseif char > 225 then
+        return 3
+    elseif char > 192 then
+        return 2
+    else
+        return 1
+    end
+end
+
+-- This function can return a substring of a UTF-8 string, properly handling
+-- UTF-8 codepoints.  Rather than taking a start index and optionally an end
+-- index, it takes the string, the starting character, and the number of
+-- characters to select from the string.
+function utf8sub(str, startChar, numChars)
+	local startIndex = 1
+	while startChar > 1 do
+		local char = string.byte(str, startIndex)
+		startIndex = startIndex + chsize(char)
+		startChar = startChar - 1
+	end
+
+	local currentIndex = startIndex
+
+	while numChars > 0 and currentIndex <= #str do
+		local char = string.byte(str, currentIndex)
+		currentIndex = currentIndex + chsize(char)
+		numChars = numChars -1
+	end
+	return string.sub(str, startIndex, currentIndex - 1)
 end

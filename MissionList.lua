@@ -38,13 +38,10 @@ local function ConfigureMission(me, mi, haveSpareCompanions, availAnima)
 	local emi = C_Garrison.GetMissionEncounterIconInfo(mid)
 	local ms = S[me]
 	mi.encounterIconInfo, mi.isElite, mi.isRare = emi, emi.isElite, emi.isRare
-	
+
 	ms.missionID, ms.baseXPReward = mid, mi.xp or 0
-	ms.Name:SetText(mi.name)
-	if (mi.description or "") ~= "" then
-		ms.Description:SetText(mi.description)
-	end
-	
+	ms.Name:SetText(utf8sub(mi.name, 1, 30))
+
 	local timeNow = GetTime()
 	local expirePrefix, expireAt, expireRoundUp = false, nil, nil, false
 	ms.completableAfter = nil
@@ -66,7 +63,7 @@ local function ConfigureMission(me, mi, haveSpareCompanions, availAnima)
 	me:SetCountdown(expirePrefix, expireAt, nil, nil, 2, expireRoundUp)
 	ms.Rewards:SetRewards(mi.xp, mi.rewards)
 	SetAchievementReward(ms.AchievementReward, mid)
-	
+
 	local cost = (mi.cost or 0) + (mi.hasTentativeGroup and U.GetTentativeMissionTroopCount(mid) or 0)
 	local isSufficientAnima = not availAnima or (cost <= availAnima)
 	local isMissionActive = not not (mi.completed or mi.timeLeftSeconds)
@@ -86,7 +83,7 @@ local function ConfigureMission(me, mi, haveSpareCompanions, availAnima)
 	for i=1,#ms.Rewards do
 		ms.Rewards[i].RarityBorder:SetVertexColor(veilShade, veilShade, veilShade)
 	end
-	
+
 	local mdi = C_Garrison.GetMissionDeploymentInfo(mid)
 	local hasNovelSpells, totalHP, totalATK, enemies = false, 0, 0, mdi.enemies
 	for i=1,#enemies do
@@ -109,7 +106,7 @@ local function ConfigureMission(me, mi, haveSpareCompanions, availAnima)
 	ms.statLine:SetWidth(ms.duration:GetRight() - ms.statLine:GetLeft())
 	ms.TagText:SetText(tag)
 	ms:SetGroupPortraits(showTentative and U.GetTentativeGroup(mid, bufferedTentativeGroup) or U.GetInProgressGroup(mi.followers, bufferedTentativeGroup), isMissionActive, ms.Description)
-	
+
 	me:Show()
 end
 local function cmpMissionInfo(a, b)
@@ -157,6 +154,7 @@ local function pushMissionSet(ni, missions, skip, ...)
 	end
 	return ni
 end
+local UP_ITEMS = {[188655]=1,[188656]=1,[188657]=1};
 local function UpdateMissions()
 	MissionList.dirty = nil
 	MissionList.clearedRewardSync = nil
@@ -188,14 +186,16 @@ local function UpdateMissions()
 			local sg = 0
 			for j=1, m.rewards and #m.rewards or 0 do
 				local i = m.rewards[j]
-				if i.currencyID == 1828 and sg < 3 then
-					sg = 3
+				if UP_ITEMS[i.itemID] and sg < 5 then
+					sg = 5;
+				elseif i.currencyID == 0 and i.quantity and sg < 4 then
+					sg = 4;
 				elseif i.followerXP and sg < 2 then
-					sg = haveRookies and 2 or j == 1 and -1 or sg
+					sg = haveRookies and 2 or j == 1 and -1 or sg;
 				elseif i.itemID and C_Item.IsAnimaItemByID(i.itemID) and sg < 1 then
-					sg = 1
+					sg = 1;
 				elseif sg < 0 then
-					sg = 0
+					sg = 0;
 				end
 			end
 			m.sortGroup = sg
@@ -203,7 +203,7 @@ local function UpdateMissions()
 		m.hasTentativeGroup = U.MissionHasTentativeGroup(mid)
 		m.hasPendingStart = U.IsMissionStartingSoon(mid)
 	end
-	
+
 	local ni, anima = 1, C_CurrencyInfo.GetCurrencyInfo(1813)
 	anima = (anima and anima.quantity or 0)
 	ni = pushMissionSet(ni, missions, nil, haveUnassignedRookies, anima)
@@ -262,6 +262,7 @@ local function UBSync(e, o)
 		S[MissionList]:CheckScrollRange()
 	end
 end
+
 local function MissionComplete_Toast(_, mid, won, mi)
 	local toast = MissionPage:AcquireToast()
 	local novel = T.GetMissionReportInfo and T.GetMissionReportInfo(mid)

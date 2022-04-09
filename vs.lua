@@ -59,7 +59,7 @@ end
 local f32_sr do
 	local ah, al = {}, {}
 	local ev, minv, maxv = {}, {}, {}
-	
+
 	function f32_sr(s)
 		local c, mc = s.c, #s
 		if mc == 1 then
@@ -532,7 +532,7 @@ function mu:unstackf32(_sourceIndex, targetIndex, stackName, magh)
 		end
 		s[#s] = nil
 	end
-	b[stackName], b[stackName .. "H"] = nil
+	b[stackName], b[stackName .. "H"] = nil, nil
 end
 
 function mu:modDamageDealt(sourceIndex, targetIndex, mod, sid)
@@ -956,7 +956,7 @@ function mu:qcast(sourceIndex, sid, eid, ord1, forkTarget)
 		if ft then
 			self.ftc, self["ft-"..ft] = bor(self.ftc or 0, tt and tt[1] and forkTargetBits[ft] or 0), tt and tt[1] or nil
 		end
-		
+
 		local et, sq, sqt, ordi = si.type, self.sq, self.sqt, ord1+i
 		for ti=1,tt and #tt or 0 do
 			local targetIndex = tt[ti]
@@ -1044,7 +1044,7 @@ local function prepareDeath(self, turn, du, deadIndex)
 			end
 			if fim > 0 or fom > 0 or dtm > 0 then
 				masks = masks or {}
-				masks[3*k] = fim > 0 and fim or nil
+				masks[3*k+0] = fim > 0 and fim or nil
 				masks[3*k+1] = fom > 0 and fom or nil
 				masks[3*k+2] = dtm > 0 and dtm or nil
 				horizon = horizon and horizon > k and horizon or k
@@ -1194,7 +1194,7 @@ local function registerTraceResult(self, stopCB)
 end
 local function storeShallowCopy(r, s)
 	local d = {}
-	for k,v in pairs(s) do
+	for k, v in pairs(s) do
 		d[k] = v
 	end
 	r[s] = d
@@ -1239,7 +1239,7 @@ function VSI:Turn()
 			if self.dne then
 				self.dne = nil
 			else
-				for j=i-1,1,-1 do
+				for j = i-1, 1, -1 do
 					if q[j][2] == qi[2] and q[j][1] == "statDelta" then
 						qi, q[j] = q[j], nil
 						mu[qi[1]](self, unpack(qi, 2))
@@ -1281,6 +1281,7 @@ function VSI:Run(stopCB)
 			end
 			i = i + 1
 		end
+		--print(#self.forks)
 	end
 end
 
@@ -1338,7 +1339,7 @@ function VSI:Clone()
 		q[s] = nil
 		s, d = next(q)
 	end
-	n.prime, n.forkID, n.forkOracle = self.prime or self, #forks
+	n.prime, n.forkID, n.forkOracle = self.prime or self, #forks, nil
 	return n
 end
 
@@ -1470,7 +1471,7 @@ function VS:New(followers, encounters, envSpell, mid, mscalar, forkLimit)
 			boardOrder[1+#boardOrder] = b
 		end
 	end
-	
+
 	local ii = setmetatable({
 		board=board,
 		turn=0,
